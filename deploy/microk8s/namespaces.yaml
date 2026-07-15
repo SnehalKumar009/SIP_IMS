@@ -1,0 +1,28 @@
+# Namespaces for the IMS SIP Platform.
+# - ims-core:    signaling/control/charging pods (P/I/S-CSCF, HSS, CDF)
+# - ims-media:   RTPEngine (host-networked media plane)
+# - monitoring:  observability stack (Homer/Heplify; Prometheus/Grafana live in the
+#                addon-managed 'observability' namespace)
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ims-core
+  labels:
+    app.kubernetes.io/part-of: ims-platform
+    plane: signaling
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ims-media
+  labels:
+    app.kubernetes.io/part-of: ims-platform
+    plane: media
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring
+  labels:
+    app.kubernetes.io/part-of: ims-platform
+    plane: observability

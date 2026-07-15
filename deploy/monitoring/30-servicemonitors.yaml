@@ -1,0 +1,45 @@
+# Prometheus scrape config (Prometheus Operator ServiceMonitors).
+#
+# The MicroK8s `observability` addon runs kube-prometheus-stack as release
+# "kube-prom-stack". Its Prometheus only adopts ServiceMonitors carrying the label
+# `release: kube-prom-stack`, so that label is set on both monitors below.
+#
+# 1) IMS pods expose Spring Boot Actuator Prometheus metrics on the `actuator` port.
+# 2) heplify-server exposes its own metrics on :9096.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: ims-pods
+  namespace: monitoring
+  labels:
+    release: kube-prom-stack
+spec:
+  namespaceSelector:
+    matchNames:
+      - ims-core
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: ims-platform
+  endpoints:
+    - port: actuator
+      path: /actuator/prometheus
+      interval: 15s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: heplify-server
+  namespace: monitoring
+  labels:
+    release: kube-prom-stack
+spec:
+  namespaceSelector:
+    matchNames:
+      - monitoring
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: heplify-server
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 15s

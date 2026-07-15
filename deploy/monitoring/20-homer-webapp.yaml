@@ -1,0 +1,73 @@
+# Homer 7 web UI + API. Reads SIP capture data from the same PostgreSQL store that
+# heplify-server writes to, and renders call-flow / ladder diagrams.
+#
+# NOTE: on first install the Homer schema must be provisioned into PostgreSQL. The
+# webapp image runs migrations on boot when DB_* env vars are set (homer-app
+# 'migrate' step). If your image tag needs a manual step, run:
+#   kubectl -n monitoring exec deploy/homer-webapp -- homer-app -create-config-db -create-data-db
+apiVersion: v1
+kind: Service
+metadata:
+  name: homer-webapp
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: homer-webapp
+spec:
+  selector:
+    app.kubernetes.io/name: homer-webapp
+  ports:
+    - name: http
+      port: 9080
+      targetPort: 80
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: homer-webapp
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: homer-webapp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: homer-webapp
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: homer-webapp
+    spec:
+      containers:
+        - name: homer-webapp
+          image: sipcapture/webapp:1.4.28
+          ports:
+            - containerPort: 80
+              name: http
+          env:
+            - name: DB_HOST
+              value: homer-postgres.monitoring.svc.cluster.local
+            - name: DB_USER
+              value: homer
+            - name: DB_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: homer-postgres
+                  key: POSTGRES_PASSWORD
+            - name: DB_NAME
+              value: homer_config
+            - name: DB_DATA_NAME
+              value: homer_data
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 20
+            periodSeconds: 15
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi

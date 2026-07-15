@@ -1,0 +1,14 @@
+# Homer SIP-capture observability stack for the IMS platform.
+# Apply with:  kubectl apply -k deploy/monitoring
+#
+# Prometheus + Grafana are provided by the MicroK8s `observability` addon; this
+# kustomization layers Homer (Heplify-Server + Postgres + web UI) and the
+# ServiceMonitors that point the addon's Prometheus at the IMS pods.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: monitoring
+resources:
+  - 00-postgres.yaml
+  - 10-heplify-server.yaml
+  - 20-homer-webapp.yaml
+  - 30-servicemonitors.yaml

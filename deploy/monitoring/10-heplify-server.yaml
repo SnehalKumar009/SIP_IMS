@@ -1,0 +1,104 @@
+# Heplify-Server: receives HEPv3 frames from every IMS pod (UDP/9060), decodes them,
+# and writes SIP capture data into the Homer PostgreSQL store. Exposes Prometheus
+# metrics on :9096.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: heplify-server-config
+  namespace: monitoring
+data:
+  heplify-server.toml: |
+    HEPAddr           = "0.0.0.0:9060"
+    HEPTCPAddr        = "0.0.0.0:9060"
+    ESAddr            = ""
+    DBShema           = "homer7"
+    DBDriver          = "postgres"
+    DBAddr            = "homer-postgres.monitoring.svc.cluster.local:5432"
+    DBUser            = "homer"
+    DBPass            = "homer-change-me"
+    DBDataTable       = "homer_data"
+    DBConfTable       = "homer_config"
+    DBBulk            = 200
+    DBTimer           = 2
+    DBWorker          = 4
+    Dedup             = false
+    DiscardMethod     = []
+    LogDbg            = ""
+    LogLvl            = "info"
+    PromAddr          = "0.0.0.0:9096"
+    PromTargetIP      = ""
+    PromTargetName    = ""
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: heplify-server
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: heplify-server
+spec:
+  selector:
+    app.kubernetes.io/name: heplify-server
+  ports:
+    - name: hep-udp
+      port: 9060
+      targetPort: 9060
+      protocol: UDP
+    - name: hep-tcp
+      port: 9060
+      targetPort: 9060
+      protocol: TCP
+    - name: metrics
+      port: 9096
+      targetPort: 9096
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: heplify-server
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: heplify-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: heplify-server
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: heplify-server
+    spec:
+      containers:
+        - name: heplify-server
+          image: sipcapture/heplify-server:1.58
+          args: ["-c", "/config/heplify-server.toml"]
+          ports:
+            - containerPort: 9060
+              name: hep-udp
+              protocol: UDP
+            - containerPort: 9060
+              name: hep-tcp
+              protocol: TCP
+            - containerPort: 9096
+              name: metrics
+          readinessProbe:
+            tcpSocket:
+              port: 9096
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          volumeMounts:
+            - name: config
+              mountPath: /config
+      volumes:
+        - name: config
+          configMap:
+            name: heplify-server-config

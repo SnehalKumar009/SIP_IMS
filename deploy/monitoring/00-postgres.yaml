@@ -1,0 +1,85 @@
+# PostgreSQL backing store for Homer (SIP capture data + Homer config).
+# Runs as a StatefulSet with a hostpath-storage PVC. Credentials come from a Secret;
+# replace the demo password before any non-local use.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: homer-postgres
+  namespace: monitoring
+type: Opaque
+stringData:
+  POSTGRES_USER: homer
+  POSTGRES_PASSWORD: homer-change-me
+  POSTGRES_DB: homer_data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: homer-postgres
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: homer-postgres
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: homer-postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: homer-postgres
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: homer-postgres
+spec:
+  serviceName: homer-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: homer-postgres
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: homer-postgres
+    spec:
+      securityContext:
+        fsGroup: 999
+      containers:
+        - name: postgres
+          image: postgres:15-alpine
+          ports:
+            - containerPort: 5432
+              name: postgres
+          envFrom:
+            - secretRef:
+                name: homer-postgres
+          env:
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "homer"]
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 5Gi

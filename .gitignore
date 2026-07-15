@@ -1,0 +1,40 @@
+# Compiled / build output
+target/
+!.mvn/wrapper/maven-wrapper.jar
+build/
+*.class
+
+# Maven
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+release.properties
+dependency-reduced-pom.xml
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.settings/
+.project
+.classpath
+*.code-workspace
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs / runtime
+*.log
+logs/
+
+# Secrets (never commit real credentials)
+*.env
+secrets/
+kubeconfig
+*.kubeconfig
+
+# Container / k8s local
+.kube/

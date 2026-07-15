@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Shared JSON logging base for all IMS pods. Include from a pod's logback-spring.xml:
+
+    <include resource="com/snehal/ims/telecom/logback-telecom.xml"/>
+    <root level="INFO">
+        <appender-ref ref="JSON_CONSOLE"/>
+    </root>
+
+  Emits one JSON object per line (Loki/ELK friendly) with MDC fields such as the
+  SIP Call-ID promoted to top-level keys for correlation.
+-->
+<included>
+    <appender name="JSON_CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <includeMdcKeyName>callId</includeMdcKeyName>
+            <includeMdcKeyName>sipMethod</includeMdcKeyName>
+            <includeMdcKeyName>traceId</includeMdcKeyName>
+            <customFields>{"platform":"ims"}</customFields>
+            <fieldNames>
+                <timestamp>timestamp</timestamp>
+                <version>[ignore]</version>
+                <levelValue>[ignore]</levelValue>
+            </fieldNames>
+        </encoder>
+    </appender>
+</included>
