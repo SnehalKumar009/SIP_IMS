@@ -32,12 +32,14 @@ enable_addon() {
   local attempt
   for attempt in 1 2 3; do
     if sudo microk8s enable "${addon}"; then
-      break
+      sudo microk8s status --wait-ready >/dev/null
+      return 0
     fi
     echo "   ${addon} enable returned non-zero (attempt ${attempt}); waiting for apiserver..."
     sleep 5
   done
-  sudo microk8s status --wait-ready >/dev/null
+  echo "!! Failed to enable addon '${addon}' after 3 attempts." >&2
+  return 1
 }
 
 echo ">> Enabling core addons..."
