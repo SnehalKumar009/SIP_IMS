@@ -23,15 +23,32 @@ fi
 echo ">> Waiting for MicroK8s to be ready..."
 sudo microk8s status --wait-ready
 
+# Enable an addon, then wait for the apiserver to come back.
+# Some addons (rbac, metrics-server) reconfigure and restart the apiserver,
+# which makes `enable` exit non-zero even though it succeeded. Retry + wait.
+enable_addon() {
+  local addon="$1"
+  echo ">> Enabling addon: ${addon}"
+  local attempt
+  for attempt in 1 2 3; do
+    if sudo microk8s enable "${addon}"; then
+      break
+    fi
+    echo "   ${addon} enable returned non-zero (attempt ${attempt}); waiting for apiserver..."
+    sleep 5
+  done
+  sudo microk8s status --wait-ready >/dev/null
+}
+
 echo ">> Enabling core addons..."
-sudo microk8s enable dns
-sudo microk8s enable hostpath-storage
-sudo microk8s enable rbac
-sudo microk8s enable registry            # local image registry at localhost:32000
-sudo microk8s enable metrics-server
+enable_addon dns
+enable_addon hostpath-storage
+enable_addon rbac
+enable_addon registry            # local image registry at localhost:32000
+enable_addon metrics-server
 
 echo ">> Enabling observability (kube-prometheus-stack: Prometheus + Grafana + Alertmanager)..."
-sudo microk8s enable observability
+enable_addon observability
 
 echo ">> Creating namespaces..."
 sudo microk8s kubectl apply -f "$(dirname "$0")/namespaces.yaml"

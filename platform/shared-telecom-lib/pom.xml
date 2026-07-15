@@ -39,7 +39,11 @@
             <artifactId>micrometer-registry-prometheus</artifactId>
         </dependency>
 
-        <!-- Jain SIP (NIST) -->
+        <!-- Jain SIP API (JSR-32 interfaces) + NIST RI -->
+        <dependency>
+            <groupId>javax.sip</groupId>
+            <artifactId>jain-sip-api</artifactId>
+        </dependency>
         <dependency>
             <groupId>javax.sip</groupId>
             <artifactId>jain-sip-ri</artifactId>

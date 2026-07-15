@@ -2,14 +2,14 @@ package com.snehal.ims.telecom.sip;
 
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
-import javax.sip.AddressFactory;
-import javax.sip.HeaderFactory;
 import javax.sip.ListeningPoint;
-import javax.sip.MessageFactory;
 import javax.sip.SipFactory;
 import javax.sip.SipListener;
 import javax.sip.SipProvider;
 import javax.sip.SipStack;
+import javax.sip.address.AddressFactory;
+import javax.sip.header.HeaderFactory;
+import javax.sip.message.MessageFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;

@@ -34,6 +34,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
         <!-- ==== Dependency versions (single source of truth) ==== -->
+        <jain-sip-api.version>1.2.1.4</jain-sip-api.version>
         <jain-sip-ri.version>1.3.0-91</jain-sip-ri.version>
         <resilience4j.version>2.2.0</resilience4j.version>
         <bucket4j.version>8.10.1</bucket4j.version>
@@ -49,6 +50,13 @@
 
     <dependencyManagement>
         <dependencies>
+            <!-- Jain SIP API (JSR-32 interfaces: javax.sip.*) -->
+            <dependency>
+                <groupId>javax.sip</groupId>
+                <artifactId>jain-sip-api</artifactId>
+                <version>${jain-sip-api.version}</version>
+            </dependency>
+
             <!-- Jain SIP (NIST reference implementation, JSR-32) -->
             <dependency>
                 <groupId>javax.sip</groupId>
