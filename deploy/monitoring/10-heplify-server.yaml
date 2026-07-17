@@ -72,8 +72,9 @@ spec:
     spec:
       containers:
         - name: heplify-server
-          image: sipcapture/heplify-server:1.58
-          args: ["-c", "/config/heplify-server.toml"]
+          image: sipcapture/heplify-server:1.30
+          command: ["./heplify-server"]
+          args: ["-config", "/config/heplify-server.toml"]
           ports:
             - containerPort: 9060
               name: hep-udp
@@ -102,3 +103,33 @@ spec:
         - name: config
           configMap:
             name: heplify-server-config
+
+# Once you apply this yaml, 
+# Here are the checklist
+# 1) 1. Pod is running
+# kubectl -n monitoring get pods -l app.kubernetes.io/name=heplify-server
+
+# 2) Logs — did it load your toml?
+# kubectl -n monitoring logs -l app.kubernetes.io/name=heplify-server
+#   On a successful start with your config you should see lines like:
+
+# staging heplify-server ... / version banner
+# creating new heplify-server ...
+# listener bind messages for 9060 (HEP) and 9096 (Prometheus)
+# a PostgreSQL connect line to homer-postgres...:5432 (proves it read DBAddr from your toml)
+
+
+# 3) Confirm the mounted toml is actually your file
+# kubectl -n monitoring exec deploy/heplify-server -- cat /config/heplify-server.toml
+
+# 4. Ports are listening
+# kubectl -n monitoring exec deploy/heplify-server -- sh -c "netstat -lnup 2>/dev/null; netstat -lntp 2>/dev/null"
+
+# 5. Metrics endpoint responds (functional proof)
+# kubectl -n monitoring port-forward deploy/heplify-server 9096:9096
+# # then in another shell:
+# curl -s localhost:9096/metrics | grep heplify
+
+# 6. End-to-end: did a capture land?
+# kubectl -n monitoring logs deploy/heplify-server | grep -i "packet\|hep\|insert"
+

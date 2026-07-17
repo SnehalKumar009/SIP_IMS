@@ -83,3 +83,21 @@ spec:
         resources:
           requests:
             storage: 5Gi
+
+# Verifying that this yaml worked
+
+# snehal@snehal-MS-7E87:~/Code/SIP_IMS/SIP_IMS$ kubectl get pods -n monitoring
+# NAME               READY   STATUS    RESTARTS   AGE
+# homer-postgres-0   1/1     Running   2          119m
+
+# snehal@snehal-MS-7E87:~/Code/SIP_IMS/SIP_IMS$ kubectl get svc homer-postgres -n monitoring
+# NAME             TYPE        CLUSTER-IP   EXTERNAL-IP   PORT(S)    AGE
+# homer-postgres   ClusterIP   None         <none>        5432/TCP   119m
+
+# snehal@snehal-MS-7E87:~/Code/SIP_IMS/SIP_IMS$ kubectl get endpoints homer-postgres -n monitoring
+# NAME             ENDPOINTS          AGE
+# homer-postgres   10.1.12.197:5432   120m
+
+# snehal@snehal-MS-7E87:~/Code/SIP_IMS/SIP_IMS$ kubectl get statefulset homer-postgres -n monitoring
+# NAME             READY   AGE
+# homer-postgres   1/1     3h
