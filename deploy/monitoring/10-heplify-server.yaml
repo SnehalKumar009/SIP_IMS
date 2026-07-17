@@ -72,7 +72,7 @@ spec:
     spec:
       containers:
         - name: heplify-server
-          image: sipcapture/heplify-server:1.30
+          image: sipcapture/heplify-server:latest
           command: ["./heplify-server"]
           args: ["-config", "/config/heplify-server.toml"]
           ports:
