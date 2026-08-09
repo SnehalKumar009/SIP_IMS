@@ -49,6 +49,13 @@
             <artifactId>jain-sip-ri</artifactId>
         </dependency>
 
+        <!-- NIST stack hard-references org.apache.log4j.* at init; this bridge supplies
+             those classes and routes NIST logging into SLF4J/logback (no log4j 1.x). -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>log4j-over-slf4j</artifactId>
+        </dependency>
+
         <!-- JSON structured logging encoder -->
         <dependency>
             <groupId>net.logstash.logback</groupId>
