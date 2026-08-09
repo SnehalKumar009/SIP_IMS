@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!-- ==================================================================== -->
+    <!-- p-cscf :: Proxy-CSCF                                                  -->
+    <!-- The SIP entry point for the UE. Stateful proxy built on the shared    -->
+    <!-- Jain SIP lifecycle; rate-limits (Bucket4j), guards the upstream hop   -->
+    <!-- (Resilience4j), and mirrors every message to Homer via HEPv3.         -->
+    <!-- ==================================================================== -->
+
+    <parent>
+        <groupId>com.snehal.ims</groupId>
+        <artifactId>ims-platform</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+        <relativePath>../../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>p-cscf</artifactId>
+    <name>p-cscf</name>
+    <description>Proxy-CSCF: SIP entry point, NAT-aware stateful proxy, rate limiting</description>
+
+    <dependencies>
+        <!-- Shared Jain SIP lifecycle + HEPv3 capture + SIP metrics (auto-config) -->
+        <dependency>
+            <groupId>com.snehal.ims</groupId>
+            <artifactId>shared-telecom-lib</artifactId>
+        </dependency>
+
+        <!-- Actuator Prometheus endpoint is scraped by the ims-pods ServiceMonitor -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
+
+        <!-- Resilience4j guards the upstream (I-CSCF) forwarding boundary -->
+        <dependency>
+            <groupId>io.github.resilience4j</groupId>
+            <artifactId>resilience4j-spring-boot3</artifactId>
+        </dependency>
+
+        <!-- Bucket4j token-bucket rate limiting on inbound SIP requests -->
+        <dependency>
+            <groupId>com.bucket4j</groupId>
+            <artifactId>bucket4j-core</artifactId>
+        </dependency>
+
+        <!-- ==== test ==== -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!-- Executable boot jar for the pod image -->
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>
