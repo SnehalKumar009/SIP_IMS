@@ -31,6 +31,7 @@ import javax.sip.message.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Component;
 
 /**
@@ -53,7 +54,10 @@ public class PcscfSipListener implements SipListener {
     private final SipRateLimiter rateLimiter;
     private final PcscfProperties props;
 
-    public PcscfSipListener(SipStackManager stack,
+    // @Lazy breaks the pcscfSipListener <-> sipStackManager cycle: the manager attaches
+    // this listener during its own @PostConstruct, and the listener only needs the manager's
+    // factories at request time, so a lazy proxy is sufficient here.
+    public PcscfSipListener(@Lazy SipStackManager stack,
                             HepCaptureService hep,
                             SipMetrics metrics,
                             SipRateLimiter rateLimiter,
