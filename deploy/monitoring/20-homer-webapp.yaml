@@ -40,7 +40,8 @@ spec:
     spec:
       containers:
         - name: homer-webapp
-          image: sipcapture/webapp:1.4.28
+          # sipcapture/webapp publishes only the `latest` tag on Docker Hub.
+          image: sipcapture/webapp:latest
           ports:
             - containerPort: 80
               name: http
