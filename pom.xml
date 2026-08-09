@@ -26,6 +26,7 @@
 
     <modules>
         <module>platform/shared-telecom-lib</module>
+        <module>services/p-cscf</module>
     </modules>
 
     <properties>

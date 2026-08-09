@@ -1,0 +1,113 @@
+# P-CSCF: SIP entry point for the UE. Stateful Jain SIP proxy that mirrors traffic to
+# Homer (HEPv3) and exposes Actuator/Prometheus metrics on the `actuator` port.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: p-cscf-config
+  namespace: ims-core
+  labels:
+    app.kubernetes.io/name: p-cscf
+    app.kubernetes.io/part-of: ims-platform
+data:
+  # Overrides layered on top of the image's packaged application.yml.
+  SPRING_APPLICATION_JSON: |
+    {
+      "ims": {
+        "pcscf": {
+          "next-hop": { "host": "i-cscf.ims-core.svc.cluster.local", "port": 5060, "transport": "udp" },
+          "rate-limit": { "enabled": true, "capacity": 50, "refill-tokens": 50, "refill-period-seconds": 1 }
+        }
+      }
+    }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: p-cscf
+  namespace: ims-core
+  labels:
+    app.kubernetes.io/name: p-cscf
+    app.kubernetes.io/part-of: ims-platform
+spec:
+  selector:
+    app.kubernetes.io/name: p-cscf
+  ports:
+    - name: sip-udp
+      port: 5060
+      targetPort: 5060
+      protocol: UDP
+    - name: sip-tcp
+      port: 5060
+      targetPort: 5060
+      protocol: TCP
+    - name: actuator
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: p-cscf
+  namespace: ims-core
+  labels:
+    app.kubernetes.io/name: p-cscf
+    app.kubernetes.io/part-of: ims-platform
+    plane: signaling
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: p-cscf
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: p-cscf
+        app.kubernetes.io/part-of: ims-platform
+        plane: signaling
+    spec:
+      containers:
+        - name: p-cscf
+          image: localhost:32000/ims/p-cscf:latest
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: p-cscf-config
+          env:
+            # Advertised Via / Record-Route / Path host — the pod's routable IP.
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: IMS_PCSCF_SELF_HOST
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+          ports:
+            - containerPort: 5060
+              name: sip-udp
+              protocol: UDP
+            - containerPort: 5060
+              name: sip-tcp
+              protocol: TCP
+            - containerPort: 8080
+              name: actuator
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: actuator
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: actuator
+            initialDelaySeconds: 20
+            periodSeconds: 15
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
