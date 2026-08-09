@@ -115,7 +115,7 @@ public class PcscfSipListener implements SipListener {
         HeaderFactory hf = stack.getHeaderFactory();
         Request out = (Request) request.clone();
 
-        MaxForwardsHeader mf = out.getMaxForwards();
+        MaxForwardsHeader mf = (MaxForwardsHeader) out.getHeader(MaxForwardsHeader.NAME);
         if (mf == null) {
             out.setHeader(hf.createMaxForwardsHeader(70));
         } else if (mf.getMaxForwards() <= 0) {
