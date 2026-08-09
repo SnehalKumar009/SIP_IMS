@@ -18,6 +18,22 @@ public class SipRateLimiter {
 
     public SipRateLimiter(PcscfProperties properties) {
         this.config = properties.getRateLimit();
+        if (config.isEnabled()) {
+            validate();
+        }
+    }
+
+    private void validate() {
+        require(config.getCapacity() > 0, "capacity", config.getCapacity());
+        require(config.getRefillTokens() > 0, "refillTokens", config.getRefillTokens());
+        require(config.getRefillPeriodSeconds() > 0, "refillPeriodSeconds", config.getRefillPeriodSeconds());
+    }
+
+    private static void require(boolean valid, String field, long value) {
+        if (!valid) {
+            throw new IllegalStateException(
+                    "ims.pcscf.rate-limit." + field + " must be positive but was " + value);
+        }
     }
 
     /** @return true if the request from {@code sourceIp} is allowed to proceed. */
