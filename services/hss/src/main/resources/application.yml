@@ -1,0 +1,57 @@
+spring:
+  application:
+    name: hss
+  datasource:
+    url: ${HSS_DB_URL:jdbc:postgresql://localhost:5432/hss}
+    username: ${HSS_DB_USER:hss}
+    password: ${HSS_DB_PASSWORD:hss-change-me}
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+
+server:
+  # Actuator / management HTTP port (scraped by the ims-pods ServiceMonitor).
+  port: 8080
+
+# gRPC Cx interface (net.devh grpc-server-spring-boot-starter).
+grpc:
+  server:
+    port: 9090
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  metrics:
+    tags:
+      application: hss
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      hssStore:
+        sliding-window-size: 20
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
+
+ims:
+  # HSS speaks gRPC, not SIP, and has nothing to mirror to Homer.
+  sip:
+    enabled: false
+  hep:
+    enabled: false
+  hss:
+    realm: ims.snehal.com
+    auth-scheme: SIP Digest
+    seed-demo-data: true

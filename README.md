@@ -57,6 +57,6 @@ microk8s kubectl apply -k deploy/monitoring
 
 - **Phase 0 — Foundation** ✅ cluster + `shared-telecom-lib` + observability
 - **Phase 1 — P-CSCF** (SIP entrypoint, NAT traversal, Bucket4j)
-- **Phase 2 — HSS** (PostgreSQL + gRPC Cx)
+- **Phase 2 — HSS** ✅ (PostgreSQL + gRPC Cx)
 - **Phase 3 — I-CSCF** · **Phase 4 — S-CSCF** · **Phase 5 — RTPEngine**
 - **Phase 6 — CDF-billing** · **Phase 7 — E2E + stress (SIPp)**
