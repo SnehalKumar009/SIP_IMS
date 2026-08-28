@@ -1,0 +1,187 @@
+# HSS: control-plane subscriber store. Exposes the Cx interface over gRPC (9090) to the
+# I-CSCF / S-CSCF and Actuator/Prometheus metrics on 8080. Backed by its own PostgreSQL.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: hss-postgres
+  namespace: ims-core
+  labels:
+    app.kubernetes.io/name: hss-postgres
+    app.kubernetes.io/part-of: ims-platform
+type: Opaque
+stringData:
+  POSTGRES_USER: hss
+  POSTGRES_PASSWORD: hss-change-me
+  POSTGRES_DB: hss
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hss-postgres
+  namespace: ims-core
+  labels:
+    app.kubernetes.io/name: hss-postgres
+    app.kubernetes.io/part-of: ims-platform
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: hss-postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: hss-postgres
+  namespace: ims-core
+  labels:
+    app.kubernetes.io/name: hss-postgres
+    app.kubernetes.io/part-of: ims-platform
+spec:
+  serviceName: hss-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: hss-postgres
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: hss-postgres
+        app.kubernetes.io/part-of: ims-platform
+    spec:
+      securityContext:
+        fsGroup: 999
+      containers:
+        - name: postgres
+          image: postgres:15-alpine
+          ports:
+            - containerPort: 5432
+              name: postgres
+          envFrom:
+            - secretRef:
+                name: hss-postgres
+          env:
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "hss"]
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 5Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hss-config
+  namespace: ims-core
+  labels:
+    app.kubernetes.io/name: hss
+    app.kubernetes.io/part-of: ims-platform
+data:
+  # Overrides layered on top of the image's packaged application.yml.
+  HSS_DB_URL: jdbc:postgresql://hss-postgres.ims-core.svc.cluster.local:5432/hss
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hss
+  namespace: ims-core
+  labels:
+    app.kubernetes.io/name: hss
+    app.kubernetes.io/part-of: ims-platform
+spec:
+  selector:
+    app.kubernetes.io/name: hss
+  ports:
+    - name: grpc-cx
+      port: 9090
+      targetPort: 9090
+      protocol: TCP
+    - name: actuator
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hss
+  namespace: ims-core
+  labels:
+    app.kubernetes.io/name: hss
+    app.kubernetes.io/part-of: ims-platform
+    plane: control
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: hss
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: hss
+        app.kubernetes.io/part-of: ims-platform
+        plane: control
+    spec:
+      containers:
+        - name: hss
+          image: localhost:32000/ims/hss:latest
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: hss-config
+          env:
+            - name: HSS_DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: hss-postgres
+                  key: POSTGRES_USER
+            - name: HSS_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: hss-postgres
+                  key: POSTGRES_PASSWORD
+          ports:
+            - containerPort: 9090
+              name: grpc-cx
+            - containerPort: 8080
+              name: actuator
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: actuator
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: actuator
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          resources:
+            requests:
+              cpu: 250m
+              memory: 384Mi
+            limits:
+              cpu: "1"
+              memory: 768Mi
