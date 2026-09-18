@@ -1,0 +1,8 @@
+# The JPA slice runs against embedded H2; Flyway migrations are PostgreSQL-specific,
+# so the schema is derived from the entities here instead.
+spring:
+  flyway:
+    enabled: false
+  jpa:
+    hibernate:
+      ddl-auto: create-drop

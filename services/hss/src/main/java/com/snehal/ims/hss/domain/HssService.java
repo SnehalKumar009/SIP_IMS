@@ -4,9 +4,7 @@ import com.snehal.ims.hss.HssProperties;
 import com.snehal.ims.hss.grpc.AuthorizationType;
 import com.snehal.ims.hss.grpc.ServerAssignmentType;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.stereotype.Service;
@@ -77,9 +75,14 @@ public class HssService {
             return MaaResult.experimental(CxResultCodes.DIAMETER_ERROR_AUTH_SCHEME_NOT_SUPPORTED);
         }
 
-        String ha1 = digestHa1(s.getImpi(), s.getRealm(), s.getPassword());
-        AuthVector vector = new AuthVector(props.getAuthScheme(), s.getRealm(), s.getRealm(), ha1, "auth");
-        return MaaResult.success(s.getImpu(), s.getImpi(), List.of(vector));
+        // Both flavours are returned; the S-CSCF picks the one matching its configured algorithm.
+        List<AuthVector> vectors = new ArrayList<>(2);
+        vectors.add(new AuthVector(DigestCredentials.SCHEME_MD5, s.getRealm(), s.getRealm(), s.getHa1(), "auth"));
+        if (s.getHa1Sha256() != null && !s.getHa1Sha256().isBlank()) {
+            vectors.add(new AuthVector(DigestCredentials.SCHEME_SHA256, s.getRealm(), s.getRealm(),
+                    s.getHa1Sha256(), "auth"));
+        }
+        return MaaResult.success(s.getImpu(), s.getImpi(), List.copyOf(vectors));
     }
 
     // ---- SAR / SAA ----
@@ -145,22 +148,8 @@ public class HssService {
     private boolean isSupportedScheme(String scheme) {
         return "unknown".equalsIgnoreCase(scheme)
                 || props.getAuthScheme().equalsIgnoreCase(scheme)
-                || "SIP Digest".equalsIgnoreCase(scheme);
-    }
-
-    private static String digestHa1(String impi, String realm, String password) {
-        try {
-            MessageDigest md5 = MessageDigest.getInstance("MD5");
-            byte[] digest = md5.digest((impi + ":" + realm + ":" + password).getBytes(StandardCharsets.UTF_8));
-            StringBuilder hex = new StringBuilder(digest.length * 2);
-            for (byte b : digest) {
-                hex.append(Character.forDigit((b >> 4) & 0xF, 16));
-                hex.append(Character.forDigit(b & 0xF, 16));
-            }
-            return hex.toString();
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("MD5 unavailable", e);
-        }
+                || DigestCredentials.SCHEME_MD5.equalsIgnoreCase(scheme)
+                || DigestCredentials.SCHEME_SHA256.equalsIgnoreCase(scheme);
     }
 
     // ---- transport-neutral result carriers ----

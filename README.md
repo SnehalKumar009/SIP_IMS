@@ -56,7 +56,10 @@ microk8s kubectl apply -k deploy/monitoring
 ## Build phases
 
 - **Phase 0 — Foundation** ✅ cluster + `shared-telecom-lib` + observability
-- **Phase 1 — P-CSCF** (SIP entrypoint, NAT traversal, Bucket4j)
-- **Phase 2 — HSS** ✅ (PostgreSQL + gRPC Cx)
-- **Phase 3 — I-CSCF** · **Phase 4 — S-CSCF** · **Phase 5 — RTPEngine**
-- **Phase 6 — CDF-billing** · **Phase 7 — E2E + stress (SIPp)**
+- **Phase 1 — P-CSCF** ✅ (SIP entrypoint, NAT traversal, Bucket4j)
+- **Phase 2 — HSS** ✅ (PostgreSQL + Flyway + gRPC Cx, H(A1)-only credentials)
+- **Phase 3 — I-CSCF** ✅ (home-network entry proxy, HSS Cx client UAR/LIR, S-CSCF selection)
+- **Phase 4 — S-CSCF** ✅ (registrar, SIP Digest auth, Cx MAR/SAR, session control)
+- **Phase 5 — RTPEngine** · **Phase 6 — CDF-billing** · **Phase 7 — E2E + stress (SIPp)**
+
+Known shortcuts and deferred work are tracked in [docs/TECH_DEBT.md](docs/TECH_DEBT.md).

@@ -1,0 +1,152 @@
+# S-CSCF: registrar and session controller.
+#
+# Deployed as a StatefulSet behind a headless Service so every pod has a stable DNS name
+# (s-cscf-0.s-cscf.ims-core.svc.cluster.local). That name is what the pod reports to the
+# HSS as its server_name in the Cx Server-Assignment, and what the I-CSCF then routes
+# terminating requests to after an LIR — so a registration and the calls that follow it
+# always land on the pod that actually holds the binding.
+#
+# The same headless Service name (s-cscf.ims-core.svc.cluster.local) resolves to all pod
+# IPs, which is what the I-CSCF uses as its fallback S-CSCF target.
+#
+# Scaling past one replica with the in-memory store is safe only because of that pinning;
+# for replica-independent routing switch ims.scscf.store to redis (see redis.yaml) and
+# set ims.scscf.server-name to the Service name.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: s-cscf-config
+  namespace: ims-core
+  labels:
+    app.kubernetes.io/name: s-cscf
+    app.kubernetes.io/part-of: ims-platform
+data:
+  # Overrides layered on top of the image's packaged application.yml.
+  SPRING_APPLICATION_JSON: |
+    {
+      "grpc": {
+        "client": {
+          "hss": { "address": "static://hss.ims-core.svc.cluster.local:9090", "negotiation-type": "plaintext" }
+        }
+      },
+      "ims": {
+        "scscf": {
+          "home-domain": "ims.snehal.com",
+          "store": "memory",
+          "registration": {
+            "default-expires": 600,
+            "min-expires": 60,
+            "max-expires": 3600,
+            "max-bindings-per-aor": 5
+          },
+          "auth": { "algorithm": "MD5" },
+          "rate-limit": { "enabled": true, "capacity": 10, "refill-tokens": 10, "refill-period-seconds": 60 },
+          "cx": { "timeout": "750ms" }
+        }
+      }
+    }
+---
+# Headless: gives each pod an individual A record, which the S-CSCF assignment model needs.
+apiVersion: v1
+kind: Service
+metadata:
+  name: s-cscf
+  namespace: ims-core
+  labels:
+    app.kubernetes.io/name: s-cscf
+    app.kubernetes.io/part-of: ims-platform
+spec:
+  clusterIP: None
+  # Pods must be resolvable while still starting, or a peer that restarts first cannot
+  # route to them.
+  publishNotReadyAddresses: true
+  selector:
+    app.kubernetes.io/name: s-cscf
+  ports:
+    - name: sip-udp
+      port: 5060
+      targetPort: 5060
+      protocol: UDP
+    - name: sip-tcp
+      port: 5060
+      targetPort: 5060
+      protocol: TCP
+    - name: actuator
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: s-cscf
+  namespace: ims-core
+  labels:
+    app.kubernetes.io/name: s-cscf
+    app.kubernetes.io/part-of: ims-platform
+    plane: signaling
+spec:
+  serviceName: s-cscf
+  replicas: 1
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: s-cscf
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: s-cscf
+        app.kubernetes.io/part-of: ims-platform
+        plane: signaling
+    spec:
+      # Long enough for in-flight transactions to finish once DrainCoordinator starts
+      # refusing new ones.
+      terminationGracePeriodSeconds: 45
+      containers:
+        - name: s-cscf
+          image: localhost:32000/ims/s-cscf:latest
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: s-cscf-config
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            # Advertised in Via, Record-Route, Service-Route and reported to the HSS.
+            # The per-pod DNS name, not the pod IP, so it survives a reschedule.
+            - name: IMS_SCSCF_SELF_HOST
+              value: "$(POD_NAME).s-cscf.ims-core.svc.cluster.local"
+          ports:
+            - containerPort: 5060
+              name: sip-udp
+              protocol: UDP
+            - containerPort: 5060
+              name: sip-tcp
+              protocol: TCP
+            - containerPort: 8080
+              name: actuator
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: actuator
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: actuator
+            initialDelaySeconds: 20
+            periodSeconds: 15
+          resources:
+            requests:
+              cpu: 250m
+              memory: 384Mi
+            limits:
+              cpu: "1"
+              memory: 768Mi

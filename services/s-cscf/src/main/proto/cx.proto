@@ -1,0 +1,106 @@
+syntax = "proto3";
+
+// Cx interface (I/S-CSCF <-> HSS). In a standards-compliant IMS this rides on
+// Diameter; here it is modeled over gRPC per the platform's transport directive.
+//
+// Kept byte-identical to services/hss/src/main/proto/cx.proto — the HSS owns the
+// contract, each client vendors a copy for stub generation.
+package ims.cx.v1;
+
+option java_multiple_files = true;
+option java_package = "com.snehal.ims.hss.grpc";
+option java_outer_classname = "CxProto";
+
+service CxService {
+  // UAR/UAA: I-CSCF authorizes a REGISTER and locates/assigns an S-CSCF.
+  rpc UserAuthorization (UserAuthorizationRequest) returns (UserAuthorizationAnswer);
+  // MAR/MAA: S-CSCF pulls authentication vectors for a subscriber.
+  rpc MultimediaAuth (MultimediaAuthRequest) returns (MultimediaAuthAnswer);
+  // SAR/SAA: S-CSCF stores/clears its assignment and pulls the user profile.
+  rpc ServerAssignment (ServerAssignmentRequest) returns (ServerAssignmentAnswer);
+  // LIR/LIA: I-CSCF locates the serving S-CSCF for a terminating request.
+  rpc LocationInfo (LocationInfoRequest) returns (LocationInfoAnswer);
+}
+
+enum AuthorizationType {
+  AUTHORIZATION_TYPE_REGISTRATION = 0;
+  AUTHORIZATION_TYPE_DEREGISTRATION = 1;
+  AUTHORIZATION_TYPE_REGISTRATION_AND_CAPABILITIES = 2;
+}
+
+enum ServerAssignmentType {
+  SERVER_ASSIGNMENT_NO_ASSIGNMENT = 0;
+  SERVER_ASSIGNMENT_REGISTRATION = 1;
+  SERVER_ASSIGNMENT_RE_REGISTRATION = 2;
+  SERVER_ASSIGNMENT_UNREGISTERED_USER = 3;
+  SERVER_ASSIGNMENT_TIMEOUT_DEREGISTRATION = 4;
+  SERVER_ASSIGNMENT_USER_DEREGISTRATION = 5;
+  SERVER_ASSIGNMENT_AUTHENTICATION_FAILURE = 6;
+}
+
+// ---- UAR / UAA ----
+message UserAuthorizationRequest {
+  string public_identity = 1;   // IMPU, e.g. sip:alice@ims.snehal.com
+  string private_identity = 2;  // IMPI, e.g. alice@ims.snehal.com
+  string visited_network = 3;
+  AuthorizationType authorization_type = 4;
+}
+
+message UserAuthorizationAnswer {
+  int32 result_code = 1;               // Diameter base result (2xxx/5xxx)
+  int32 experimental_result_code = 2;  // Cx experimental result (registration status)
+  string server_name = 3;              // assigned S-CSCF (SIP URI) when already known
+  repeated string server_capabilities = 4; // capability set when I-CSCF must select one
+}
+
+// ---- MAR / MAA ----
+message MultimediaAuthRequest {
+  string public_identity = 1;
+  string private_identity = 2;
+  string scscf_name = 3;
+  string authentication_scheme = 4;    // "SIP Digest" or "Digest-AKAv1-MD5"
+  int32 number_auth_items = 5;
+}
+
+message AuthenticationVector {
+  string scheme = 1;
+  string realm = 2;
+  string authenticate = 3;   // challenge material (nonce input)
+  string authorization = 4;  // expected response material (digest HA1)
+  string qop = 5;
+}
+
+message MultimediaAuthAnswer {
+  int32 result_code = 1;
+  int32 experimental_result_code = 2;
+  string public_identity = 3;
+  string private_identity = 4;
+  repeated AuthenticationVector vectors = 5;
+}
+
+// ---- SAR / SAA ----
+message ServerAssignmentRequest {
+  string public_identity = 1;
+  string private_identity = 2;
+  string server_name = 3;
+  ServerAssignmentType assignment_type = 4;
+}
+
+message ServerAssignmentAnswer {
+  int32 result_code = 1;
+  int32 experimental_result_code = 2;
+  string user_profile = 3;   // service profile / iFC XML
+}
+
+// ---- LIR / LIA ----
+message LocationInfoRequest {
+  string public_identity = 1;
+  bool originating = 2;
+}
+
+message LocationInfoAnswer {
+  int32 result_code = 1;
+  int32 experimental_result_code = 2;
+  string server_name = 3;               // serving S-CSCF for a registered user
+  repeated string server_capabilities = 4;
+}

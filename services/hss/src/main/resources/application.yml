@@ -7,12 +7,16 @@ spring:
     password: ${HSS_DB_PASSWORD:hss-change-me}
   jpa:
     hibernate:
-      ddl-auto: update
+      # Schema is owned by Flyway; Hibernate only checks the mapping matches.
+      ddl-auto: validate
     open-in-view: false
     properties:
       hibernate:
         jdbc:
           time_zone: UTC
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
 
 server:
   # Actuator / management HTTP port (scraped by the ims-pods ServiceMonitor).

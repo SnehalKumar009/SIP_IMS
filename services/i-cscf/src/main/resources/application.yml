@@ -1,0 +1,67 @@
+spring:
+  application:
+    name: i-cscf
+
+server:
+  # Actuator / management HTTP port (scraped by the ims-pods ServiceMonitor).
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  metrics:
+    tags:
+      application: i-cscf
+
+# gRPC client toward the HSS Cx interface (net.devh grpc-client-spring-boot-starter).
+grpc:
+  client:
+    hss:
+      address: static://hss.ims-core.svc.cluster.local:9090
+      negotiation-type: plaintext
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      hssCx:
+        sliding-window-size: 20
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
+  bulkhead:
+    instances:
+      hssCx:
+        # Caps how much of the Jain SIP thread pool can be blocked inside the HSS.
+        max-concurrent-calls: 16
+        max-wait-duration: 50ms
+
+# Shared Jain SIP stack (shared-telecom-lib). Home-network entry point on 5060.
+ims:
+  sip:
+    enabled: true
+    stack-name: i-cscf
+    host: 0.0.0.0
+    port: 5060
+    transport: udp
+  hep:
+    enabled: true
+    host: heplify-server.monitoring.svc.cluster.local
+    port: 9060
+    capture-agent-id: 2012
+  icscf:
+    self-host: ${POD_IP:127.0.0.1}
+    self-port: 5060
+    home-domain: ims.snehal.com
+    visited-network: ims.snehal.com
+    scscf:
+      host: s-cscf.ims-core.svc.cluster.local
+      port: 5060
+      transport: udp
+    cx:
+      timeout: 750ms

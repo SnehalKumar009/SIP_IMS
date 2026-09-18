@@ -7,7 +7,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *
  * <p>{@code self*} values are what this proxy advertises in Via / Record-Route / Path
  * (must be reachable by the next hop and by the UE); {@code nextHop*} is the upstream
- * I-CSCF. Until Phase 3 the next hop is a static stub target.</p>
+ * I-CSCF (Phase 3, {@code i-cscf.ims-core.svc.cluster.local}).</p>
  */
 @ConfigurationProperties(prefix = "ims.pcscf")
 public class PcscfProperties {
@@ -18,7 +18,7 @@ public class PcscfProperties {
     /** Port this P-CSCF advertises (normally equal to {@code ims.sip.port}). */
     private int selfPort = 5060;
 
-    /** Upstream I-CSCF (static stub until Phase 3). */
+    /** Upstream I-CSCF (Phase 3). */
     private final NextHop nextHop = new NextHop();
 
     /** Per-source token-bucket rate limiting. */

@@ -1,0 +1,80 @@
+# Optional: shared binding store for the S-CSCF.
+#
+# Only needed when running with ims.scscf.store=redis, which lets any S-CSCF replica
+# serve any subscriber and lets bindings survive a pod restart. With the default
+# in-memory store this file is not required.
+#
+# After applying it, set in the s-cscf ConfigMap:
+#   "store": "redis"
+#   "server-name": "sip:s-cscf.ims-core.svc.cluster.local:5060"
+# so the HSS records the Service rather than one pod as the serving S-CSCF.
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: ims-core
+  labels:
+    app.kubernetes.io/name: redis
+    app.kubernetes.io/part-of: ims-platform
+spec:
+  selector:
+    app.kubernetes.io/name: redis
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: 6379
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis
+  namespace: ims-core
+  labels:
+    app.kubernetes.io/name: redis
+    app.kubernetes.io/part-of: ims-platform
+spec:
+  serviceName: redis
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: redis
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: redis
+        app.kubernetes.io/part-of: ims-platform
+    spec:
+      securityContext:
+        fsGroup: 999
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          # Bindings are reconstructible from re-registration, so durability is traded
+          # for latency; AOF is disabled deliberately.
+          args: ["--appendonly", "no", "--save", ""]
+          ports:
+            - containerPort: 6379
+              name: redis
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          volumeMounts:
+            - name: data
+              mountPath: /data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi

@@ -30,9 +30,9 @@ public class DataSeeder implements CommandLineRunner {
             return;
         }
         String realm = props.getRealm();
-        subscribers.save(new Subscriber(
+        subscribers.save(Subscriber.provision(
                 "alice@" + realm, "sip:alice@" + realm, realm, "alice-secret", defaultProfile("alice", realm)));
-        subscribers.save(new Subscriber(
+        subscribers.save(Subscriber.provision(
                 "bob@" + realm, "sip:bob@" + realm, realm, "bob-secret", defaultProfile("bob", realm)));
         log.info("Seeded {} demo subscriber(s) in realm {}", subscribers.count(), realm);
     }

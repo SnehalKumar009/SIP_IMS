@@ -28,6 +28,8 @@
         <module>platform/shared-telecom-lib</module>
         <module>services/p-cscf</module>
         <module>services/hss</module>
+        <module>services/i-cscf</module>
+        <module>services/s-cscf</module>
     </modules>
 
     <properties>
@@ -107,6 +109,13 @@
             <dependency>
                 <groupId>net.devh</groupId>
                 <artifactId>grpc-server-spring-boot-starter</artifactId>
+                <version>${grpc-spring.version}</version>
+            </dependency>
+
+            <!-- Spring Boot 3 integration for gRPC client (@GrpcClient, used by the I-CSCF Cx client) -->
+            <dependency>
+                <groupId>net.devh</groupId>
+                <artifactId>grpc-client-spring-boot-starter</artifactId>
                 <version>${grpc-spring.version}</version>
             </dependency>
 

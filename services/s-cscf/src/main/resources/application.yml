@@ -1,0 +1,97 @@
+spring:
+  application:
+    name: s-cscf
+  # Only contacted when ims.scscf.store=redis; the connection factory is lazy.
+  data:
+    redis:
+      host: ${REDIS_HOST:redis.ims-core.svc.cluster.local}
+      port: ${REDIS_PORT:6379}
+      timeout: 500ms
+
+server:
+  # Actuator / management HTTP port (scraped by the ims-pods ServiceMonitor).
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  health:
+    # Redis is optional; its health must not hold the pod out of service when unused.
+    redis:
+      enabled: false
+  metrics:
+    tags:
+      application: s-cscf
+
+# gRPC Cx interface toward the HSS.
+grpc:
+  client:
+    hss:
+      address: static://hss.ims-core.svc.cluster.local:9090
+      negotiation-type: plaintext
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      hssCx:
+        sliding-window-size: 20
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
+  bulkhead:
+    instances:
+      hssCx:
+        # Caps how much of the Jain SIP thread pool can be blocked inside the HSS.
+        max-concurrent-calls: 16
+        max-wait-duration: 50ms
+
+ims:
+  sip:
+    enabled: true
+    stack-name: s-cscf
+    host: 0.0.0.0
+    port: 5060
+    transport: udp
+  hep:
+    enabled: true
+    host: heplify-server.monitoring.svc.cluster.local
+    port: 9060
+    capture-agent-id: 2013
+  scscf:
+    # Must be the pod's own routable address: the HSS stores it as this subscriber's
+    # serving S-CSCF and the I-CSCF routes terminating requests straight back to it.
+    self-host: ${POD_IP:127.0.0.1}
+    self-port: 5060
+    home-domain: ims.snehal.com
+    # Blank derives sip:<self-host>:<self-port>.
+    server-name: ""
+    store: memory
+    registration:
+      default-expires: 600
+      min-expires: 60
+      max-expires: 3600
+      max-bindings-per-aor: 5
+      reaper-interval: 30s
+    auth:
+      algorithm: MD5
+      nonce-lifetime: 5m
+      max-outstanding-nonces: 50000
+    rate-limit:
+      enabled: true
+      capacity: 10
+      refill-tokens: 10
+      refill-period-seconds: 60
+    routing:
+      max-spirals: 2
+      default-max-forwards: 70
+      draining-retry-after-seconds: 30
+    cx:
+      timeout: 750ms
+      max-concurrent-calls: 16
+      max-wait: 50ms

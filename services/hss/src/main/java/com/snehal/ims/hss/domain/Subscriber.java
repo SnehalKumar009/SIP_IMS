@@ -14,6 +14,9 @@ import jakarta.persistence.UniqueConstraint;
  * A single IMS subscriber binding one private identity (IMPI) to one public
  * identity (IMPU), the credential used for SIP Digest authentication, and the
  * current S-CSCF assignment tracked over the Cx interface.
+ *
+ * <p>Credentials are persisted only as realm-bound H(A1) digests — the plaintext
+ * password is never stored.</p>
  */
 @Entity
 @Table(name = "subscriber",
@@ -39,9 +42,13 @@ public class Subscriber {
     @Column(nullable = false)
     private String realm;
 
-    /** Shared secret used to derive the SIP Digest HA1. */
-    @Column(nullable = false)
-    private String password;
+    /** MD5 H(A1) = H(impi:realm:password), the 3GPP "SIP Digest" credential. */
+    @Column(nullable = false, length = 64)
+    private String ha1;
+
+    /** SHA-256 H(A1), offered alongside MD5 for RFC 8760 capable clients. */
+    @Column(name = "ha1_sha256", length = 128)
+    private String ha1Sha256;
 
     /** SIP URI of the currently assigned serving S-CSCF, or {@code null}. */
     @Column(name = "scscf_name")
@@ -58,19 +65,30 @@ public class Subscriber {
     protected Subscriber() {
     }
 
-    public Subscriber(String impi, String impu, String realm, String password, String serviceProfile) {
+    public Subscriber(String impi, String impu, String realm, String ha1, String ha1Sha256, String serviceProfile) {
         this.impi = impi;
         this.impu = impu;
         this.realm = realm;
-        this.password = password;
+        this.ha1 = ha1;
+        this.ha1Sha256 = ha1Sha256;
         this.serviceProfile = serviceProfile;
+    }
+
+    /** Provisioning entry point: derives both digests and discards the plaintext password. */
+    public static Subscriber provision(String impi, String impu, String realm,
+                                       String password, String serviceProfile) {
+        return new Subscriber(impi, impu, realm,
+                DigestCredentials.ha1Md5(impi, realm, password),
+                DigestCredentials.ha1Sha256(impi, realm, password),
+                serviceProfile);
     }
 
     public Long getId() { return id; }
     public String getImpi() { return impi; }
     public String getImpu() { return impu; }
     public String getRealm() { return realm; }
-    public String getPassword() { return password; }
+    public String getHa1() { return ha1; }
+    public String getHa1Sha256() { return ha1Sha256; }
     public String getScscfName() { return scscfName; }
     public void setScscfName(String scscfName) { this.scscfName = scscfName; }
     public RegistrationState getState() { return state; }

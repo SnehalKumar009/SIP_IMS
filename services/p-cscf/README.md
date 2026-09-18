@@ -5,9 +5,9 @@ rate-limits inbound requests (Bucket4j), mirrors every message to Homer over HEP
 inserts the P-CSCF into the signaling path (Via / Record-Route / Path), and forwards
 to the upstream I-CSCF. Exposes Actuator/Prometheus metrics on port `8080`.
 
-> Upstream forwarding fails until the I-CSCF (Phase 3) exists — `next-hop` won't
-> resolve yet. Boot, SIP listen (5060), HEP capture, metrics, and rate-limiting all
-> work today.
+> `next-hop` targets the I-CSCF (`i-cscf.ims-core.svc.cluster.local:5060`, Phase 3). Deploy
+> the I-CSCF pod for upstream forwarding to succeed. Boot, SIP listen (5060), HEP capture,
+> metrics, and rate-limiting all work standalone.
 
 ## Build
 
@@ -70,7 +70,7 @@ microk8s kubectl apply -k deploy/monitoring
 |-----|---------|---------|
 | `ims.pcscf.self-host` | `${POD_IP}` | Host advertised in Via / Record-Route / Path |
 | `ims.pcscf.self-port` | `5060` | Port advertised to peers |
-| `ims.pcscf.next-hop.{host,port,transport}` | `i-cscf.ims-core.svc.cluster.local:5060/udp` | Upstream I-CSCF (stub until Phase 3) |
+| `ims.pcscf.next-hop.{host,port,transport}` | `i-cscf.ims-core.svc.cluster.local:5060/udp` | Upstream I-CSCF (Phase 3) |
 | `ims.pcscf.rate-limit.enabled` | `true` | Per-source token-bucket toggle |
 | `ims.pcscf.rate-limit.capacity` | `50` | Burst size per source IP |
 | `ims.pcscf.rate-limit.refill-tokens` | `50` | Tokens refilled per period |

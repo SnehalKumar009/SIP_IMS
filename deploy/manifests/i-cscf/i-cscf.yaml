@@ -1,0 +1,120 @@
+# I-CSCF: home-network entry proxy. Stateful Jain SIP proxy that interrogates the HSS over
+# the Cx interface (gRPC) — UAR on REGISTER, LIR on terminating requests — selects an
+# S-CSCF, forwards to it, mirrors traffic to Homer (HEPv3) and exposes Actuator metrics.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: i-cscf-config
+  namespace: ims-core
+  labels:
+    app.kubernetes.io/name: i-cscf
+    app.kubernetes.io/part-of: ims-platform
+data:
+  # Overrides layered on top of the image's packaged application.yml.
+  SPRING_APPLICATION_JSON: |
+    {
+      "grpc": {
+        "client": {
+          "hss": { "address": "static://hss.ims-core.svc.cluster.local:9090", "negotiation-type": "plaintext" }
+        }
+      },
+      "ims": {
+        "icscf": {
+          "home-domain": "ims.snehal.com",
+          "visited-network": "ims.snehal.com",
+          "scscf": { "host": "s-cscf.ims-core.svc.cluster.local", "port": 5060, "transport": "udp" }
+        }
+      }
+    }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: i-cscf
+  namespace: ims-core
+  labels:
+    app.kubernetes.io/name: i-cscf
+    app.kubernetes.io/part-of: ims-platform
+spec:
+  selector:
+    app.kubernetes.io/name: i-cscf
+  ports:
+    - name: sip-udp
+      port: 5060
+      targetPort: 5060
+      protocol: UDP
+    - name: sip-tcp
+      port: 5060
+      targetPort: 5060
+      protocol: TCP
+    - name: actuator
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: i-cscf
+  namespace: ims-core
+  labels:
+    app.kubernetes.io/name: i-cscf
+    app.kubernetes.io/part-of: ims-platform
+    plane: signaling
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: i-cscf
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: i-cscf
+        app.kubernetes.io/part-of: ims-platform
+        plane: signaling
+    spec:
+      containers:
+        - name: i-cscf
+          image: localhost:32000/ims/i-cscf:latest
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: i-cscf-config
+          env:
+            # Advertised Via / Route host — the pod's routable IP.
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: IMS_ICSCF_SELF_HOST
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+          ports:
+            - containerPort: 5060
+              name: sip-udp
+              protocol: UDP
+            - containerPort: 5060
+              name: sip-tcp
+              protocol: TCP
+            - containerPort: 8080
+              name: actuator
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: actuator
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: actuator
+            initialDelaySeconds: 20
+            periodSeconds: 15
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi

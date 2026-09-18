@@ -31,7 +31,7 @@ class HssServiceTest {
     @BeforeEach
     void seed() {
         subscribers.deleteAll();
-        subscribers.save(new Subscriber(IMPI, IMPU, REALM, "alice-secret", "<ServiceProfile/>"));
+        subscribers.save(Subscriber.provision(IMPI, IMPU, REALM, "alice-secret", "<ServiceProfile/>"));
     }
 
     @Test
@@ -59,10 +59,21 @@ class HssServiceTest {
 
     @Test
     void multimediaAuthReturnsDigestVector() {
-        HssService.MaaResult r = hss.multimediaAuth(IMPU, IMPI, "SIP Digest");
+        HssService.MaaResult r = hss.multimediaAuth(IMPU, IMPI, DigestCredentials.SCHEME_MD5);
         assertThat(r.resultCode()).isEqualTo(CxResultCodes.DIAMETER_SUCCESS);
-        assertThat(r.vectors()).hasSize(1);
-        assertThat(r.vectors().get(0).authorization()).hasSize(32); // MD5 HA1 hex
+        assertThat(r.vectors()).hasSize(2);
+        assertThat(r.vectors().get(0).scheme()).isEqualTo(DigestCredentials.SCHEME_MD5);
+        assertThat(r.vectors().get(0).authorization())
+                .isEqualTo(DigestCredentials.ha1Md5(IMPI, REALM, "alice-secret"));
+        assertThat(r.vectors().get(1).scheme()).isEqualTo(DigestCredentials.SCHEME_SHA256);
+        assertThat(r.vectors().get(1).authorization()).hasSize(64);
+    }
+
+    @Test
+    void unsupportedAuthSchemeRejected() {
+        HssService.MaaResult r = hss.multimediaAuth(IMPU, IMPI, "Digest-AKAv1-MD5");
+        assertThat(r.experimentalResultCode())
+                .isEqualTo(CxResultCodes.DIAMETER_ERROR_AUTH_SCHEME_NOT_SUPPORTED);
     }
 
     @Test
