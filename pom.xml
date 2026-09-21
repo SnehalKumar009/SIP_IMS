@@ -19,7 +19,7 @@
 
     <groupId>com.snehal.ims</groupId>
     <artifactId>ims-platform</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>1.0.0-SNAPSHOT</version>
     <packaging>pom</packaging>
     <name>IMS SIP Platform</name>
     <description>Production-grade containerized IMS SIP platform (CSCF / HSS / CDF)</description>

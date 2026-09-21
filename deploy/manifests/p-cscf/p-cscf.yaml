@@ -68,7 +68,7 @@ spec:
     spec:
       containers:
         - name: p-cscf
-          image: localhost:32000/ims/p-cscf:latest
+          image: localhost:32000/ims/p-cscf:21092026
           imagePullPolicy: IfNotPresent
           envFrom:
             - configMapRef:

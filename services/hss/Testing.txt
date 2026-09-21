@@ -1,0 +1,121 @@
+krpc - It's a shell function
+Commands to check
+
+PREREQUISITE
+===================================
+1) Only if using POSTMAN -  kubectl -n ims-core port-forward svc/hss 9090:9090
+
+2) Same terminal run 
+kgrpc() {
+  microk8s kubectl -n ims-core run "grpcurl-$RANDOM" --rm -i --restart=Never --quiet \
+    --image=fullstorydev/grpcurl:latest -- "$@"
+}
+
+
+Discovery and Reflection
+=========================
+kgrpc -plaintext hss:9090 list                                     # 3 services
+kgrpc -plaintext hss:9090 list ims.cx.v1.CxService                 # 4 RPCs
+kgrpc -plaintext hss:9090 describe ims.cx.v1.CxService             # full service definition
+kgrpc -plaintext hss:9090 describe ims.cx.v1.UserAuthorizationRequest
+kgrpc -plaintext hss:9090 describe ims.cx.v1.MultimediaAuthRequest
+kgrpc -plaintext hss:9090 describe ims.cx.v1.ServerAssignmentRequest
+kgrpc -plaintext hss:9090 describe ims.cx.v1.LocationInfoRequest
+
+
+Health and transport
+====================
+kgrpc -plaintext hss:9090 grpc.health.v1.Health/Check                             # SERVING
+kgrpc -plaintext -d '{"service":"ims.cx.v1.CxService"}' hss:9090 grpc.health.v1.Health/Check   # per-service health
+kgrpc -plaintext hss:9090 ims.cx.v1.CxService/DoesNotExist                        # error: method not found
+kgrpc hss:9090 list                                                               # error: TLS handshake (no -plaintext)
+
+
+UAR: UserAuthorization
+======================
+# First registration (alice has no S-CSCF)         → experimental_result_code 2001 + server_capabilities
+kgrpc -plaintext -d '{"public_identity":"sip:alice@ims.snehal.com","private_identity":"alice@ims.snehal.com"}' hss:9090 ims.cx.v1.CxService/UserAuthorization
+
+# Same, with the explicit capabilities type          → same as above (treated as registration)
+kgrpc -plaintext -d '{"public_identity":"sip:alice@ims.snehal.com","private_identity":"alice@ims.snehal.com","authorization_type":"AUTHORIZATION_TYPE_REGISTRATION_AND_CAPABILITIES"}' hss:9090 ims.cx.v1.CxService/UserAuthorization
+
+# Deregistration while not registered                → experimental_result_code 5003
+kgrpc -plaintext -d '{"public_identity":"sip:alice@ims.snehal.com","private_identity":"alice@ims.snehal.com","authorization_type":"AUTHORIZATION_TYPE_DEREGISTRATION"}' hss:9090 ims.cx.v1.CxService/UserAuthorization
+
+# Unknown user                                       → experimental_result_code 5001
+kgrpc -plaintext -d '{"public_identity":"sip:nobody@ims.snehal.com"}' hss:9090 ims.cx.v1.CxService/UserAuthorization
+
+# Alice's IMPU with bob's IMPI                       → experimental_result_code 5002
+kgrpc -plaintext -d '{"public_identity":"sip:alice@ims.snehal.com","private_identity":"bob@ims.snehal.com"}' hss:9090 ims.cx.v1.CxService/UserAuthorization
+
+# IMPU only, no IMPI (identity check skipped)        → 2001 first registration
+kgrpc -plaintext -d '{"public_identity":"sip:bob@ims.snehal.com"}' hss:9090 ims.cx.v1.CxService/UserAuthorization
+
+MAR: MultimediaAuth
+===================
+# SIP Digest (MD5)                                   → result_code 2001 + 2 vectors
+kgrpc -plaintext -d '{"public_identity":"sip:alice@ims.snehal.com","private_identity":"alice@ims.snehal.com","authentication_scheme":"SIP Digest"}' hss:9090 ims.cx.v1.CxService/MultimediaAuth
+
+# SHA-256 scheme name                                → 2001 + 2 vectors (both always returned)
+kgrpc -plaintext -d '{"public_identity":"sip:alice@ims.snehal.com","private_identity":"alice@ims.snehal.com","authentication_scheme":"SIP Digest SHA-256"}' hss:9090 ims.cx.v1.CxService/MultimediaAuth
+
+# No scheme, or "unknown"                            → 2001 + 2 vectors
+kgrpc -plaintext -d '{"public_identity":"sip:alice@ims.snehal.com","private_identity":"alice@ims.snehal.com","authentication_scheme":"unknown"}' hss:9090 ims.cx.v1.CxService/MultimediaAuth
+
+# IMS AKA (not supported)                            → experimental_result_code 5006
+kgrpc -plaintext -d '{"public_identity":"sip:alice@ims.snehal.com","private_identity":"alice@ims.snehal.com","authentication_scheme":"Digest-AKAv1-MD5"}' hss:9090 ims.cx.v1.CxService/MultimediaAuth
+
+# Unknown IMPI                                       → 5001
+kgrpc -plaintext -d '{"private_identity":"nobody@ims.snehal.com"}' hss:9090 ims.cx.v1.CxService/MultimediaAuth
+
+# Mismatched identities                              → 5002
+kgrpc -plaintext -d '{"public_identity":"sip:bob@ims.snehal.com","private_identity":"alice@ims.snehal.com"}' hss:9090 ims.cx.v1.CxService/MultimediaAuth
+
+
+SAR: ServerAssignment (these change the database)
+=================================================
+# Register at scscf1                                 → result_code 2001 + user_profile
+kgrpc -plaintext -d '{"public_identity":"sip:alice@ims.snehal.com","private_identity":"alice@ims.snehal.com","server_name":"sip:scscf1.ims.snehal.com","assignment_type":"SERVER_ASSIGNMENT_REGISTRATION"}' hss:9090 ims.cx.v1.CxService/ServerAssignment
+
+# Re-registration                                    → 2001 + user_profile
+kgrpc -plaintext -d '{"public_identity":"sip:alice@ims.snehal.com","private_identity":"alice@ims.snehal.com","server_name":"sip:scscf1.ims.snehal.com","assignment_type":"SERVER_ASSIGNMENT_RE_REGISTRATION"}' hss:9090 ims.cx.v1.CxService/ServerAssignment
+
+# Unregistered user (S-CSCF kept for incoming calls)  → 2001 + user_profile, state UNREGISTERED
+kgrpc -plaintext -d '{"public_identity":"sip:bob@ims.snehal.com","private_identity":"bob@ims.snehal.com","server_name":"sip:scscf1.ims.snehal.com","assignment_type":"SERVER_ASSIGNMENT_UNREGISTERED_USER"}' hss:9090 ims.cx.v1.CxService/ServerAssignment
+
+# User deregistration                                → 2001, no profile, assignment cleared
+kgrpc -plaintext -d '{"public_identity":"sip:alice@ims.snehal.com","private_identity":"alice@ims.snehal.com","assignment_type":"SERVER_ASSIGNMENT_USER_DEREGISTRATION"}' hss:9090 ims.cx.v1.CxService/ServerAssignment
+
+# Timeout deregistration                             → 2001, assignment cleared
+kgrpc -plaintext -d '{"public_identity":"sip:alice@ims.snehal.com","private_identity":"alice@ims.snehal.com","assignment_type":"SERVER_ASSIGNMENT_TIMEOUT_DEREGISTRATION"}' hss:9090 ims.cx.v1.CxService/ServerAssignment
+
+# Authentication failure                             → 2001, assignment cleared
+kgrpc -plaintext -d '{"public_identity":"sip:alice@ims.snehal.com","private_identity":"alice@ims.snehal.com","assignment_type":"SERVER_ASSIGNMENT_AUTHENTICATION_FAILURE"}' hss:9090 ims.cx.v1.CxService/ServerAssignment
+
+# assignment_type omitted (defaults to NO_ASSIGNMENT = 0) → experimental_result_code 5007
+kgrpc -plaintext -d '{"public_identity":"sip:alice@ims.snehal.com","private_identity":"alice@ims.snehal.com","server_name":"sip:scscf1.ims.snehal.com"}' hss:9090 ims.cx.v1.CxService/ServerAssignment
+
+# Unknown user                                       → 5001
+kgrpc -plaintext -d '{"private_identity":"nobody@ims.snehal.com","assignment_type":"SERVER_ASSIGNMENT_REGISTRATION"}' hss:9090 ims.cx.v1.CxService/ServerAssignment
+
+
+LIR: LocationInfo
+=================
+# Registered user                                    → result_code 2001 + server_name
+kgrpc -plaintext -d '{"public_identity":"sip:alice@ims.snehal.com"}' hss:9090 ims.cx.v1.CxService/LocationInfo
+
+# User in UNREGISTERED state (after bob's SAR above) → experimental_result_code 2003 + server_name
+kgrpc -plaintext -d '{"public_identity":"sip:bob@ims.snehal.com"}' hss:9090 ims.cx.v1.CxService/LocationInfo
+
+# Not registered                                     → 5003 + server_capabilities
+# (run after deregistering)
+kgrpc -plaintext -d '{"public_identity":"sip:alice@ims.snehal.com"}' hss:9090 ims.cx.v1.CxService/LocationInfo
+
+# Unknown user                                       → 5001
+kgrpc -plaintext -d '{"public_identity":"sip:nobody@ims.snehal.com"}' hss:9090 ims.cx.v1.CxService/LocationInfo
+
+Database Check
+==============
+hssdb "SELECT id, impi, impu, state, scscf_name FROM subscriber ORDER BY id;"      # current state
+hssdb "SELECT version, description, success FROM flyway_schema_history;"           # migrations
+hssdb "\d subscriber"                                                               # table structure + indexes
