@@ -104,8 +104,8 @@ spec:
       terminationGracePeriodSeconds: 45
       containers:
         - name: s-cscf
-          image: localhost:32000/ims/s-cscf:latest
-          imagePullPolicy: IfNotPresent
+          image: localhost:32000/ims/s-cscf:29092026
+          imagePullPolicy: Always
           envFrom:
             - configMapRef:
                 name: s-cscf-config

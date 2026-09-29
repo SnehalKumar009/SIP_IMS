@@ -4,8 +4,8 @@ spring:
   # Only contacted when ims.scscf.store=redis; the connection factory is lazy.
   data:
     redis:
-      host: ${REDIS_HOST:redis.ims-core.svc.cluster.local}
-      port: ${REDIS_PORT:6379}
+      host: redis.ims-core.svc.cluster.local
+      port: 6379
       timeout: 500ms
 
 server:
@@ -77,7 +77,7 @@ ims:
       min-expires: 60
       max-expires: 3600
       max-bindings-per-aor: 5
-      reaper-interval: 30s
+      reaper-interval: PT30S
     auth:
       algorithm: MD5
       nonce-lifetime: 5m

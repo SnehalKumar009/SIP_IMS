@@ -35,7 +35,7 @@ public class RegistrationReaper {
         this.metrics = metrics;
     }
 
-    @Scheduled(fixedDelayString = "${ims.scscf.registration.reaper-interval:30s}")
+    @Scheduled(fixedDelayString = "${ims.scscf.registration.reaper-interval:PT30S}")
     public void sweep() {
         List<Binding> expired = store.removeExpired(Instant.now());
         if (expired.isEmpty()) {
