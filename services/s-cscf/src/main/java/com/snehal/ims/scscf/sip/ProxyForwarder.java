@@ -120,6 +120,11 @@ public class ProxyForwarder {
     public void popOwnRoute(Request request) {
         if (topRouteIsSelf(request)) {
             request.removeFirst(RouteHeader.NAME);
+            log.debug("TRACE     · popped our own top Route (RFC 3261 16.4)");
+        } else {
+            RouteHeader top = (RouteHeader) request.getHeader(RouteHeader.NAME);
+            log.debug("TRACE     · top Route is not us: {}",
+                    top == null ? "none" : top.getAddress().getURI());
         }
     }
 
@@ -159,6 +164,8 @@ public class ProxyForwarder {
         RecordRouteHeader header = stack.getHeaderFactory()
                 .createRecordRouteHeader(af.createAddress(uri));
         request.addFirst(header);
+        log.debug("TRACE     · added Record-Route {}:{} (S-CSCF stays in the dialog path)",
+                props.getSelfHost(), props.getSelfPort());
     }
 
     /**
@@ -167,6 +174,7 @@ public class ProxyForwarder {
      */
     public void applyPathAsRoute(Request request, List<String> path) throws Exception {
         HeaderFactory hf = stack.getHeaderFactory();
+        log.debug("TRACE     · replaying stored Path as Route set: {}", path);
         for (int i = path.size() - 1; i >= 0; i--) {
             Header route = hf.createHeader(RouteHeader.NAME, path.get(i));
             request.addFirst(route);
@@ -201,6 +209,10 @@ public class ProxyForwarder {
         captureOutbound(out, callId);
         clientTx.sendRequest();
         sipMetrics.recordSent(method);
+        NextHop hop = nextHopOf(out);
+        log.debug("TRACE OUT -> {} callId={} dst={}:{} branch={}",
+                method, callId, hop.host(), hop.port(), clientTx.getBranchId());
+        log.debug("TRACE OUT -> full message:\n{}", out);
         return clientTx;
     }
 
@@ -209,6 +221,8 @@ public class ProxyForwarder {
         captureOutbound(out, callId);
         provider.sendRequest(out);
         sipMetrics.recordSent(method);
+        NextHop hop = nextHopOf(out);
+        log.debug("TRACE OUT -> {} callId={} dst={}:{} (stateless)", method, callId, hop.host(), hop.port());
     }
 
     public Response respond(ServerTransaction serverTx, Request request, int status,
@@ -226,6 +240,10 @@ public class ProxyForwarder {
         }
         captureOutboundResponse(request, response);
         sipMetrics.recordSent(String.valueOf(status));
+        log.debug("TRACE OUT -> {} {} callId={} dst={}:{}",
+                status, response.getReasonPhrase(), SipMessages.callId(response),
+                SipMessages.topViaHost(request), SipMessages.topViaPort(request));
+        log.debug("TRACE OUT -> full message:\n{}", response);
         return response;
     }
 

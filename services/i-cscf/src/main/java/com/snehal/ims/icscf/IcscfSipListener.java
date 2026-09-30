@@ -102,11 +102,15 @@ public class IcscfSipListener implements SipListener {
         Timer.Sample sample = metrics.startTimer();
         try {
             SipProvider provider = (SipProvider) event.getSource();
+            log.debug("TRACE IN  <- {} callId={} src={}:{} ruri={}",
+                    method, callId, topViaHost(request), portOf(request), request.getRequestURI());
+            log.debug("TRACE IN  <- full message:\n{}", request);
             capture(HepCaptureService.Direction.INBOUND, topViaHost(request), portOf(request),
                     props.getSelfHost(), props.getSelfPort(), callId, request.toString());
 
             // ACK is end-to-end within an established dialog: forward statelessly.
             if (Request.ACK.equals(method)) {
+                log.debug("TRACE     · ACK is end-to-end, forwarding statelessly");
                 forwardAck(provider, request);
                 return;
             }
@@ -114,13 +118,17 @@ public class IcscfSipListener implements SipListener {
             ServerTransaction serverTx = event.getServerTransaction();
             if (serverTx == null) {
                 serverTx = provider.getNewServerTransaction(request);
+                log.debug("TRACE     · created new server transaction branch={}", serverTx.getBranchId());
             }
 
             ScscfTarget target = resolveScscf(request, method, serverTx, callId);
             if (target == null) {
                 // resolveScscf already rejected the transaction.
+                log.debug("TRACE     · S-CSCF resolution failed, transaction already rejected");
                 return;
             }
+            log.debug("TRACE     · resolved S-CSCF target {}:{}/{}",
+                    target.host(), target.port(), target.transport());
             forwardRequest(provider, request, serverTx, method, callId, target);
         } catch (Exception e) {
             metrics.recordDropped();
@@ -140,10 +148,16 @@ public class IcscfSipListener implements SipListener {
         if (Request.REGISTER.equals(method)) {
             String impu = registeringImpu(request);
             String impi = privateIdentity(request, impu);
+            log.debug("TRACE Cx  -> UAR impu={} impi={} visited={} type=REGISTRATION",
+                    impu, impi, props.getVisitedNetwork());
             UserAuthorizationAnswer uaa = cx.userAuthorization(
                     impu, impi, props.getVisitedNetwork(), AuthorizationType.AUTHORIZATION_TYPE_REGISTRATION);
+            log.debug("TRACE Cx  <- UAA result={} experimental={} server={} capabilities={}",
+                    uaa.getResultCode(), uaa.getExperimentalResultCode(),
+                    uaa.getServerName(), uaa.getServerCapabilitiesList());
             Integer sipError = cxErrorToSip(uaa.getResultCode(), uaa.getExperimentalResultCode());
             if (sipError != null) {
+                log.debug("TRACE     · UAA maps to SIP {}", sipError);
                 log.info("UAR rejected impu={} result={} experimental={}", impu,
                         uaa.getResultCode(), uaa.getExperimentalResultCode());
                 reject(serverTx, request, sipError);
@@ -155,9 +169,14 @@ public class IcscfSipListener implements SipListener {
         }
 
         String impu = terminatingImpu(request);
+        log.debug("TRACE Cx  -> LIR impu={} originating=false", impu);
         LocationInfoAnswer lia = cx.locationInfo(impu, false);
+        log.debug("TRACE Cx  <- LIA result={} experimental={} server={} capabilities={}",
+                lia.getResultCode(), lia.getExperimentalResultCode(),
+                lia.getServerName(), lia.getServerCapabilitiesList());
         Integer sipError = cxErrorToSip(lia.getResultCode(), lia.getExperimentalResultCode());
         if (sipError != null) {
+            log.debug("TRACE     · LIA maps to SIP {}", sipError);
             log.info("LIR rejected impu={} result={} experimental={}", impu,
                     lia.getResultCode(), lia.getExperimentalResultCode());
             reject(serverTx, request, sipError);
@@ -176,18 +195,25 @@ public class IcscfSipListener implements SipListener {
         MaxForwardsHeader mf = (MaxForwardsHeader) out.getHeader(MaxForwardsHeader.NAME);
         if (mf == null) {
             out.setHeader(hf.createMaxForwardsHeader(70));
+            log.debug("TRACE     · no Max-Forwards present, set to 70");
         } else if (mf.getMaxForwards() <= 0) {
+            log.debug("TRACE     · Max-Forwards exhausted, rejecting 483");
             reject(serverTx, request, Response.TOO_MANY_HOPS);
             return;
         } else {
             mf.decrementMaxForwards();
+            log.debug("TRACE     · Max-Forwards decremented to {}", mf.getMaxForwards());
         }
 
         // Route toward the resolved S-CSCF, then our own Via on top.
         out.addFirst(scscfRoute(target));
+        log.debug("TRACE     · added Route -> sip:{}:{};transport={}",
+                target.host(), target.port(), target.transport());
         ViaHeader via = hf.createViaHeader(props.getSelfHost(), props.getSelfPort(), transport(), null);
         via.setRPort();
         out.addFirst(via);
+        log.debug("TRACE     · added own Via {}:{}/{};rport (I-CSCF does not Record-Route)",
+                props.getSelfHost(), props.getSelfPort(), transport());
 
         ClientTransaction clientTx = provider.getNewClientTransaction(out);
         clientTx.setApplicationData(new TxContext(serverTx, target));
@@ -196,6 +222,9 @@ public class IcscfSipListener implements SipListener {
                 target.host(), target.port(), callId, out.toString());
         clientTx.sendRequest();
         metrics.recordSent(method);
+        log.debug("TRACE OUT -> {} callId={} dst={}:{} branch={}",
+                method, callId, target.host(), target.port(), clientTx.getBranchId());
+        log.debug("TRACE OUT -> full message:\n{}", out);
     }
 
     private void forwardAck(SipProvider provider, Request request) throws Exception {
@@ -220,6 +249,10 @@ public class IcscfSipListener implements SipListener {
             TxContext ctx = clientTx != null ? (TxContext) clientTx.getApplicationData() : null;
             ScscfTarget upstream = ctx != null ? ctx.upstream() : null;
 
+            log.debug("TRACE IN  <- {} {} callId={} from S-CSCF {}",
+                    status, response.getReasonPhrase(), callId,
+                    upstream != null ? upstream.host() + ":" + upstream.port() : "unknown");
+            log.debug("TRACE IN  <- full message:\n{}", response);
             capture(HepCaptureService.Direction.INBOUND,
                     upstream != null ? upstream.host() : "0.0.0.0",
                     upstream != null ? upstream.port() : 5060,
@@ -229,8 +262,11 @@ public class IcscfSipListener implements SipListener {
             response.removeFirst(ViaHeader.NAME);
             if (response.getHeader(ViaHeader.NAME) == null) {
                 // Response was addressed to this proxy itself; nothing to relay.
+                log.debug("TRACE     · no Via left after popping our own — not relaying");
                 return;
             }
+            log.debug("TRACE     · popped own Via, next Via is {}:{}",
+                    topViaHost(response), portOf(response));
 
             capture(HepCaptureService.Direction.OUTBOUND, props.getSelfHost(), props.getSelfPort(),
                     topViaHost(response), portOf(response), callId, response.toString());
@@ -238,8 +274,11 @@ public class IcscfSipListener implements SipListener {
             ServerTransaction serverTx = ctx != null ? ctx.serverTx() : null;
             if (serverTx != null) {
                 serverTx.sendResponse(response);
+                log.debug("TRACE OUT -> {} callId={} via server tx branch={}",
+                        status, callId, serverTx.getBranchId());
             } else {
                 ((SipProvider) event.getSource()).sendResponse(response);
+                log.debug("TRACE OUT -> {} callId={} statelessly (no server tx)", status, callId);
             }
             metrics.recordSent(String.valueOf(status));
         } catch (Exception e) {
@@ -253,7 +292,7 @@ public class IcscfSipListener implements SipListener {
 
     @Override
     public void processTimeout(TimeoutEvent event) {
-        log.warn("Transaction timeout ({})", event.getTimeout());
+        log.warn("TRACE !!! transaction timeout ({}) — S-CSCF did not answer", event.getTimeout());
     }
 
     @Override

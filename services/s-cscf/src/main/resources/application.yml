@@ -33,8 +33,10 @@ management:
 grpc:
   client:
     hss:
-      address: static://hss.ims-core.svc.cluster.local:9090
+      address: dns:///hss.ims-core.svc.cluster.local:9090
       negotiation-type: plaintext
+      # Connect the channel at startup, not on the first Cx call (see I-CSCF note).
+      immediate-connect-timeout: 5s
 
 resilience4j:
   circuitbreaker:
@@ -95,3 +97,8 @@ ims:
       timeout: 750ms
       max-concurrent-calls: 16
       max-wait: 50ms
+
+# Verbose signaling trace. Drop to INFO once the flows are familiar.
+logging:
+  level:
+    com.snehal.ims: DEBUG

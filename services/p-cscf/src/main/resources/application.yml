@@ -44,3 +44,8 @@ ims:
       capacity: 50
       refill-tokens: 50
       refill-period-seconds: 1
+
+# Verbose signaling trace. Drop to INFO once the flows are familiar.
+logging:
+  level:
+    com.snehal.ims: DEBUG

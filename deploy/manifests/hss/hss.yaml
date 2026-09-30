@@ -145,8 +145,8 @@ spec:
     spec:
       containers:
         - name: hss
-          image: localhost:32000/ims/hss:20092026
-          imagePullPolicy: IfNotPresent
+          image: localhost:32000/ims/hss:latest
+          imagePullPolicy: Always
           envFrom:
             - configMapRef:
                 name: hss-config

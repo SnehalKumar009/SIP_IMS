@@ -73,7 +73,10 @@ public class RegistrarHandler {
 
     public void handle(Request request, ServerTransaction serverTx) throws Exception {
         String impu = SipMessages.toAor(request);
+        log.debug("TRACE REG · handling REGISTER impu={} cseq={} callId={}",
+                impu, SipMessages.cseq(request), SipMessages.callId(request));
         if (impu == null) {
+            log.debug("TRACE REG · no To header AoR, rejecting 400");
             proxy.reject(serverTx, request, Response.BAD_REQUEST);
             return;
         }
@@ -87,16 +90,26 @@ public class RegistrarHandler {
 
         String clientIp = SipMessages.topViaHost(request);
         AuthorizationHeader auth = (AuthorizationHeader) request.getHeader(AuthorizationHeader.NAME);
+        log.debug("TRACE REG · clientIp(top Via)={} authorizationHeader={}",
+                clientIp, auth == null ? "absent" : "present");
 
         if (auth == null) {
-            challenge(request, serverTx, impu, SipMessages.deriveImpi(null, impu), clientIp, false);
+            String derived = SipMessages.deriveImpi(null, impu);
+            log.debug("TRACE REG · first leg, no credentials — challenging. derived impi={}", derived);
+            challenge(request, serverTx, impu, derived, clientIp, false);
             return;
         }
+        log.debug("TRACE REG · second leg: username={} realm={} nonce={} uri={} qop={} nc={}",
+                auth.getUsername(), auth.getRealm(), auth.getNonce(),
+                auth.getParameter("uri"), auth.getQop(), auth.getParameter("nc"));
 
         DigestAuthenticator.Verification verification =
                 authenticator.verify(auth, Request.REGISTER, clientIp);
+        log.debug("TRACE REG · digest verification result={} impi={}",
+                verification.result(), verification.impi());
         switch (verification.result()) {
             case STALE -> {
+                log.debug("TRACE REG · nonce unknown/expired — re-challenging with stale=true");
                 challenge(request, serverTx, impu,
                         SipMessages.deriveImpi(auth.getUsername(), impu), clientIp, true);
                 return;
@@ -114,7 +127,7 @@ public class RegistrarHandler {
                 return;
             }
             default -> {
-                // authenticated, fall through
+                log.debug("TRACE REG · authenticated OK for impi={}", verification.impi());
             }
         }
 
@@ -125,9 +138,13 @@ public class RegistrarHandler {
 
     private void challenge(Request request, ServerTransaction serverTx, String impu,
                            String impi, String clientIp, boolean stale) throws Exception {
+        log.debug("TRACE Cx  -> MAR impu={} impi={} scheme={}", impu, impi, authenticator.algorithm().cxScheme());
         MultimediaAuthAnswer maa = cx.multimediaAuth(impu, impi, authenticator.algorithm().cxScheme());
+        log.debug("TRACE Cx  <- MAA result={} experimental={} vectors={}",
+                maa.getResultCode(), maa.getExperimentalResultCode(), maa.getVectorsCount());
         Integer error = CxResults.toSipStatus(maa.getResultCode(), maa.getExperimentalResultCode());
         if (error != null) {
+            log.debug("TRACE     · MAA maps to SIP {}", error);
             log.info("MAR rejected impu={} result={} experimental={}", impu,
                     maa.getResultCode(), maa.getExperimentalResultCode());
             proxy.reject(serverTx, request, error);
@@ -144,9 +161,14 @@ public class RegistrarHandler {
 
         // The challenge realm must be the realm the HSS derived H(A1) under, or no
         // response the UE computes can ever verify.
+        log.debug("TRACE     · selected vector scheme={} realm={} (ha1 len={})",
+                vector.getScheme(), vector.getRealm(),
+                vector.getAuthorization() == null ? 0 : vector.getAuthorization().length());
         WWWAuthenticateHeader header = authenticator.challenge(
                 vector.getRealm(), impi, clientIp, vector.getAuthorization(), stale);
         metrics.recordChallenge();
+        log.debug("TRACE OUT -> 401 Unauthorized  realm={} nonce={} algorithm={} stale={}",
+                header.getRealm(), header.getNonce(), header.getAlgorithm(), stale);
         proxy.respond(serverTx, request, Response.UNAUTHORIZED, header);
     }
 
@@ -167,6 +189,9 @@ public class RegistrarHandler {
         List<ContactHeader> contacts = contactsOf(request);
         int headerExpires = SipMessages.expiresHeader(request);
         ScscfProperties.Registration config = props.getRegistration();
+        log.debug("TRACE REG · contacts={} expiresHeader={} (min={} max={} default={})",
+                contacts.size(), headerExpires, config.getMinExpires(),
+                config.getMaxExpires(), config.getDefaultExpires());
 
         boolean wildcardRemoval = contacts.size() == 1
                 && contacts.get(0).getAddress().isWildcard()
@@ -174,11 +199,13 @@ public class RegistrarHandler {
 
         // A REGISTER with no Contact is a query for the current bindings.
         if (contacts.isEmpty()) {
+            log.debug("TRACE REG · no Contact — this is a binding query, returning current bindings");
             respondWithBindings(request, serverTx, impu, 0);
             return;
         }
 
         if (wildcardRemoval || allExpiringNow(contacts, headerExpires, config)) {
+            log.debug("TRACE REG · expires=0 (wildcard={}) — de-registering", wildcardRemoval);
             deregister(request, serverTx, impu, impi);
             return;
         }
@@ -192,8 +219,10 @@ public class RegistrarHandler {
             return;
         }
         int granted = Math.min(requested, config.getMaxExpires());
+        log.debug("TRACE REG · requested expires={} granted={}", requested, granted);
 
         List<Binding> existing = store.find(impu);
+        log.debug("TRACE REG · existing bindings for {}: {}", impu, existing.size());
         if (isReplay(request, existing)) {
             log.warn("Out-of-order REGISTER for impu={} (cseq={})", impu, SipMessages.cseq(request));
             proxy.reject(serverTx, request, Response.SERVER_INTERNAL_ERROR);
@@ -203,9 +232,14 @@ public class RegistrarHandler {
         ServerAssignmentType assignment = existing.isEmpty()
                 ? ServerAssignmentType.SERVER_ASSIGNMENT_REGISTRATION
                 : ServerAssignmentType.SERVER_ASSIGNMENT_RE_REGISTRATION;
+        log.debug("TRACE Cx  -> SAR impu={} impi={} type={}", impu, impi, assignment);
         ServerAssignmentAnswer saa = cx.serverAssignment(impu, impi, assignment);
+        log.debug("TRACE Cx  <- SAA result={} experimental={} profileChars={}",
+                saa.getResultCode(), saa.getExperimentalResultCode(),
+                saa.getUserProfile() == null ? 0 : saa.getUserProfile().length());
         Integer error = CxResults.toSipStatus(saa.getResultCode(), saa.getExperimentalResultCode());
         if (error != null) {
+            log.debug("TRACE     · SAA maps to SIP {}", error);
             log.info("SAR rejected impu={} result={} experimental={}", impu,
                     saa.getResultCode(), saa.getExperimentalResultCode());
             proxy.reject(serverTx, request, error);
@@ -227,6 +261,8 @@ public class RegistrarHandler {
                     parseRegId(contact.getParameter("reg-id")),
                     qValueOf(contact), expiresAt);
             store.save(binding);
+            log.debug("TRACE REG · saved binding key={} contact={} expiresAt={} q={}",
+                    binding.key(), contactUri, expiresAt, binding.qValue());
         }
         enforceBindingCap(impu);
 
@@ -291,6 +327,8 @@ public class RegistrarHandler {
         headers.add(hf.createHeader(SipMessages.SERVICE_ROUTE, "<" + proxy.ownUri() + ">"));
         headers.add(hf.createHeader(SipMessages.P_ASSOCIATED_URI, "<" + impu + ">"));
 
+        log.debug("TRACE OUT -> 200 OK impu={} expires={} headers={} serviceRoute={}",
+                impu, granted, headers.size(), proxy.ownUri());
         proxy.respond(serverTx, request, Response.OK, headers.toArray(new Header[0]));
     }
 

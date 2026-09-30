@@ -7,6 +7,8 @@ import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,6 +22,8 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class HssService {
+
+    private static final Logger log = LoggerFactory.getLogger(HssService.class);
 
     private static final String CB = "hssStore";
 
@@ -35,12 +39,18 @@ public class HssService {
     @Transactional(readOnly = true)
     @CircuitBreaker(name = CB)
     public UarResult userAuthorization(String impu, String impi, String visitedNetwork, AuthorizationType type) {
+        log.debug("TRACE Cx  -> UAR impu={} impi={} visited={} type={}", impu, impi, visitedNetwork, type);
         Optional<Subscriber> found = subscribers.findByImpu(impu);
         if (found.isEmpty()) {
+            log.debug("TRACE Cx  <- UAA USER_UNKNOWN (5001): no subscriber with impu={}", impu);
             return UarResult.experimental(CxResultCodes.DIAMETER_ERROR_USER_UNKNOWN);
         }
         Subscriber s = found.get();
+        log.debug("TRACE     · matched subscriber id={} impi={} state={} scscf={}",
+                s.getId(), s.getImpi(), s.getState(), s.getScscfName());
         if (impi != null && !impi.isBlank() && !impi.equals(s.getImpi())) {
+            log.debug("TRACE Cx  <- UAA IDENTITIES_DONT_MATCH (5002): request impi={} but stored impi={}",
+                    impi, s.getImpi());
             return UarResult.experimental(CxResultCodes.DIAMETER_ERROR_IDENTITIES_DONT_MATCH);
         }
 
@@ -54,8 +64,10 @@ public class HssService {
         // Registration: reuse the existing S-CSCF if one is assigned, else ask the
         // I-CSCF to select one from the returned capability set.
         if (s.getScscfName() != null) {
+            log.debug("TRACE Cx  <- UAA SUBSEQUENT_REGISTRATION (2002) server={}", s.getScscfName());
             return UarResult.registered(CxResultCodes.DIAMETER_SUBSEQUENT_REGISTRATION, s.getScscfName());
         }
+        log.debug("TRACE Cx  <- UAA FIRST_REGISTRATION (2001), returning capabilities for I-CSCF to select");
         return UarResult.firstRegistration(List.of(props.getServerCapabilities()));
     }
 
@@ -63,8 +75,10 @@ public class HssService {
     @Transactional(readOnly = true)
     @CircuitBreaker(name = CB)
     public MaaResult multimediaAuth(String impu, String impi, String scheme) {
+        log.debug("TRACE Cx  -> MAR impu={} impi={} scheme={}", impu, impi, scheme);
         Optional<Subscriber> found = subscribers.findByImpi(impi);
         if (found.isEmpty()) {
+            log.debug("TRACE Cx  <- MAA USER_UNKNOWN (5001): no subscriber with impi={}", impi);
             return MaaResult.experimental(CxResultCodes.DIAMETER_ERROR_USER_UNKNOWN);
         }
         Subscriber s = found.get();
@@ -82,6 +96,8 @@ public class HssService {
             vectors.add(new AuthVector(DigestCredentials.SCHEME_SHA256, s.getRealm(), s.getRealm(),
                     s.getHa1Sha256(), "auth"));
         }
+        log.debug("TRACE Cx  <- MAA SUCCESS (2001) impu={} vectors={} (schemes: {})",
+                s.getImpu(), vectors.size(), vectors.stream().map(AuthVector::scheme).toList());
         return MaaResult.success(s.getImpu(), s.getImpi(), List.copyOf(vectors));
     }
 
@@ -89,8 +105,10 @@ public class HssService {
     @Transactional
     @CircuitBreaker(name = CB)
     public SaaResult serverAssignment(String impu, String impi, String serverName, ServerAssignmentType type) {
+        log.debug("TRACE Cx  -> SAR impu={} impi={} server={} type={}", impu, impi, serverName, type);
         Optional<Subscriber> found = subscribers.findByImpi(impi);
         if (found.isEmpty()) {
+            log.debug("TRACE Cx  <- SAA USER_UNKNOWN (5001): no subscriber with impi={}", impi);
             return SaaResult.experimental(CxResultCodes.DIAMETER_ERROR_USER_UNKNOWN);
         }
         Subscriber s = found.get();
@@ -103,6 +121,9 @@ public class HssService {
                 s.setScscfName(serverName);
                 s.setState(RegistrationState.REGISTERED);
                 subscribers.save(s);
+                log.debug("TRACE     · stored assignment: impu={} -> REGISTERED at {}", s.getImpu(), serverName);
+                log.debug("TRACE Cx  <- SAA SUCCESS (2001), returning service profile ({} chars)",
+                        s.getServiceProfile() == null ? 0 : s.getServiceProfile().length());
                 return SaaResult.success(s.getServiceProfile());
             }
             case SERVER_ASSIGNMENT_UNREGISTERED_USER -> {
@@ -117,6 +138,8 @@ public class HssService {
                 s.setScscfName(null);
                 s.setState(RegistrationState.NOT_REGISTERED);
                 subscribers.save(s);
+                log.debug("TRACE     · cleared assignment: impu={} -> NOT_REGISTERED (type={})", s.getImpu(), type);
+                log.debug("TRACE Cx  <- SAA SUCCESS (2001), no profile returned");
                 return SaaResult.success(null);
             }
             default -> {
@@ -129,17 +152,23 @@ public class HssService {
     @Transactional(readOnly = true)
     @CircuitBreaker(name = CB)
     public LiaResult locationInfo(String impu) {
+        log.debug("TRACE Cx  -> LIR impu={}", impu);
         Optional<Subscriber> found = subscribers.findByImpu(impu);
         if (found.isEmpty()) {
+            log.debug("TRACE Cx  <- LIA USER_UNKNOWN (5001): no subscriber with impu={}", impu);
             return LiaResult.experimental(CxResultCodes.DIAMETER_ERROR_USER_UNKNOWN);
         }
         Subscriber s = found.get();
+        log.debug("TRACE     · subscriber state={} scscf={}", s.getState(), s.getScscfName());
         if (s.getState() == RegistrationState.REGISTERED && s.getScscfName() != null) {
+            log.debug("TRACE Cx  <- LIA SUCCESS (2001) server={}", s.getScscfName());
             return LiaResult.assigned(s.getScscfName());
         }
         if (s.getState() == RegistrationState.UNREGISTERED && s.getScscfName() != null) {
+            log.debug("TRACE Cx  <- LIA UNREGISTERED_SERVICE (2003) server={}", s.getScscfName());
             return LiaResult.unregisteredService(s.getScscfName());
         }
+        log.debug("TRACE Cx  <- LIA IDENTITY_NOT_REGISTERED (5003), returning capabilities");
         return LiaResult.notRegistered(List.of(props.getServerCapabilities()));
     }
 

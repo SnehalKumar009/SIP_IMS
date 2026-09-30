@@ -116,6 +116,20 @@ kgrpc -plaintext -d '{"public_identity":"sip:nobody@ims.snehal.com"}' hss:9090 i
 
 Database Check
 ==============
-hssdb "SELECT id, impi, impu, state, scscf_name FROM subscriber ORDER BY id;"      # current state
+hssdb() {
+  microk8s kubectl -n ims-core exec -i statefulset/hss-postgres -- \
+    psql -U hss -d hss -c "$1"
+}
+
+hssdb "SELECT id, impi, impu, state, scscf_name,ha1,ha1_sha256 FROM subscriber ORDER BY id;"   # current state
+
+Ideally before testing start, everything is not AUTHORIZATION_TYPE_REGISTRATION_AND_CAPABILITIES
+Run thebelow to make it UNREGISTERED
+kgrpc -plaintext -d '{"public_identity":"sip:alice@ims.snehal.com","private_identity":"alice@ims.snehal.com","assignment_type":"SERVER_ASSIGNMENT_USER_DEREGISTRATION"}'  hss:9090 ims.cx.v1.CxService/ServerAssignment
+{
+  "result_code": 2001
+}
+
+
 hssdb "SELECT version, description, success FROM flyway_schema_history;"           # migrations
 hssdb "\d subscriber"                                                               # table structure + indexes

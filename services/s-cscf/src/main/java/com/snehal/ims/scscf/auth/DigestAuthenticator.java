@@ -64,6 +64,8 @@ public class DigestAuthenticator {
                                            String ha1, boolean stale) throws Exception {
         String nonce = nonces.issue(impi, clientIp, ha1, algorithm);
         NonceStore.Entry entry = nonces.lookup(nonce);
+        log.debug("TRACE AUTH· issued nonce={} bound to impi={} clientIp={} algorithm={}",
+                nonce, impi, clientIp, algorithm.headerValue());
 
         WWWAuthenticateHeader header = stack.getHeaderFactory().createWWWAuthenticateHeader("Digest");
         header.setRealm(realm);
@@ -82,6 +84,8 @@ public class DigestAuthenticator {
     public Verification verify(AuthorizationHeader auth, String method, String clientIp) {
         String nonce = auth.getNonce();
         NonceStore.Entry entry = nonces.lookup(nonce);
+        log.debug("TRACE AUTH· verifying method={} clientIp={} nonce={} -> {}",
+                method, clientIp, nonce, entry == null ? "UNKNOWN/EXPIRED" : "found");
         if (entry == null) {
             return new Verification(Result.STALE, auth.getUsername());
         }
@@ -89,11 +93,12 @@ public class DigestAuthenticator {
         // A nonce is issued to one client; accepting it from another would let an
         // eavesdropper reuse a captured challenge from a different network path.
         if (!entry.clientIp().equals(clientIp)) {
-            log.warn("Nonce issued to {} presented from {}", entry.clientIp(), clientIp);
+            log.warn("TRACE AUTH· FAIL nonce issued to {} but presented from {}", entry.clientIp(), clientIp);
             return new Verification(Result.FAILED, entry.impi());
         }
         if (auth.getUsername() == null || !auth.getUsername().equals(entry.impi())) {
-            log.warn("Authorization username {} does not match the challenged identity {}",
+            log.warn("TRACE AUTH· FAIL username '{}' != challenged identity '{}' "
+                            + "(the UE must send the full IMPI, e.g. user@realm)",
                     auth.getUsername(), entry.impi());
             return new Verification(Result.FAILED, entry.impi());
         }
@@ -103,6 +108,8 @@ public class DigestAuthenticator {
         String cnonce = auth.getCNonce();
         if (qop != null) {
             if (nonceCount == null || cnonce == null) {
+                log.warn("TRACE AUTH· FAIL qop={} present but nc={} cnonce={} missing",
+                        qop, nonceCount, cnonce);
                 return new Verification(Result.FAILED, entry.impi());
             }
             long nc;
@@ -112,7 +119,7 @@ public class DigestAuthenticator {
                 return new Verification(Result.FAILED, entry.impi());
             }
             if (!entry.advanceNonceCount(nc)) {
-                log.warn("Replayed nonce-count {} for impi={}", nonceCount, entry.impi());
+                log.warn("TRACE AUTH· FAIL replayed nonce-count {} for impi={}", nonceCount, entry.impi());
                 return new Verification(Result.FAILED, entry.impi());
             }
         }
@@ -121,6 +128,7 @@ public class DigestAuthenticator {
         // parameter is used rather than a parsed-and-reserialized URI.
         String digestUri = auth.getParameter("uri");
         if (digestUri == null || auth.getResponse() == null) {
+            log.warn("TRACE AUTH· FAIL missing uri={} or response={}", digestUri, auth.getResponse());
             return new Verification(Result.FAILED, entry.impi());
         }
 
@@ -131,6 +139,13 @@ public class DigestAuthenticator {
                 : alg.hash(entry.ha1() + ":" + nonce + ":" + ha2);
 
         boolean matches = constantTimeEquals(expected, auth.getResponse());
+        log.debug("TRACE AUTH· alg={} ha2=H({}:{}) expected={} received={} -> {}",
+                alg.headerValue(), method, digestUri, expected, auth.getResponse(),
+                matches ? "MATCH" : "MISMATCH");
+        if (!matches) {
+            log.warn("TRACE AUTH· FAIL digest mismatch for impi={} — wrong password, "
+                    + "or realm/uri differ from what was challenged", entry.impi());
+        }
         return new Verification(matches ? Result.SUCCESS : Result.FAILED, entry.impi());
     }
 

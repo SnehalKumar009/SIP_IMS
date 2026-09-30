@@ -26,7 +26,7 @@ data:
     {
       "grpc": {
         "client": {
-          "hss": { "address": "static://hss.ims-core.svc.cluster.local:9090", "negotiation-type": "plaintext" }
+          "hss": { "address": "dns:///hss.ims-core.svc.cluster.local:9090", "negotiation-type": "plaintext", "immediate-connect-timeout": "5s" }
         }
       },
       "ims": {
@@ -104,7 +104,7 @@ spec:
       terminationGracePeriodSeconds: 45
       containers:
         - name: s-cscf
-          image: localhost:32000/ims/s-cscf:29092026
+          image: localhost:32000/ims/s-cscf:latest
           imagePullPolicy: Always
           envFrom:
             - configMapRef:

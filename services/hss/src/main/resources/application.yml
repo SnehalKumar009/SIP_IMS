@@ -59,3 +59,8 @@ ims:
     realm: ims.snehal.com
     auth-scheme: SIP Digest
     seed-demo-data: true
+
+# Verbose signaling trace. Drop to INFO once the flows are familiar.
+logging:
+  level:
+    com.snehal.ims: DEBUG

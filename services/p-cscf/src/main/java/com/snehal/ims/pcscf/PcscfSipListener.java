@@ -83,11 +83,15 @@ public class PcscfSipListener implements SipListener {
         try {
             SipProvider provider = (SipProvider) event.getSource();
             String sourceHost = topViaHost(request);
+            log.debug("TRACE IN  <- {} callId={} src={}:{} ruri={}",
+                    method, callId, sourceHost, portOf(request), request.getRequestURI());
+            log.debug("TRACE IN  <- full message:\n{}", request);
             capture(HepCaptureService.Direction.INBOUND, sourceHost, portOf(request),
                     props.getSelfHost(), props.getSelfPort(), callId, request.toString());
 
             // ACK is end-to-end within an established dialog: forward statelessly.
             if (Request.ACK.equals(method)) {
+                log.debug("TRACE     · ACK is end-to-end, forwarding statelessly");
                 forwardAck(provider, request);
                 return;
             }
@@ -95,6 +99,9 @@ public class PcscfSipListener implements SipListener {
             ServerTransaction serverTx = event.getServerTransaction();
             if (serverTx == null) {
                 serverTx = provider.getNewServerTransaction(request);
+                log.debug("TRACE     · created new server transaction branch={}", serverTx.getBranchId());
+            } else {
+                log.debug("TRACE     · reusing server transaction branch={}", serverTx.getBranchId());
             }
 
             if (!rateLimiter.tryAcquire(sourceHost)) {
@@ -104,6 +111,7 @@ public class PcscfSipListener implements SipListener {
                 return;
             }
 
+            log.debug("TRACE     · rate-limit passed for src={}", sourceHost);
             forwardRequest(provider, request, serverTx, method, callId);
         } catch (Exception e) {
             metrics.recordDropped();
@@ -122,25 +130,34 @@ public class PcscfSipListener implements SipListener {
         MaxForwardsHeader mf = (MaxForwardsHeader) out.getHeader(MaxForwardsHeader.NAME);
         if (mf == null) {
             out.setHeader(hf.createMaxForwardsHeader(70));
+            log.debug("TRACE     · no Max-Forwards present, set to 70");
         } else if (mf.getMaxForwards() <= 0) {
+            log.debug("TRACE     · Max-Forwards exhausted, rejecting 483");
             reject(serverTx, request, Response.TOO_MANY_HOPS);
             return;
         } else {
             mf.decrementMaxForwards();
+            log.debug("TRACE     · Max-Forwards decremented to {}", mf.getMaxForwards());
         }
 
         // Insert the P-CSCF into the signaling path.
-        out.addFirst(nextHopRoute());                               // outbound Route -> I-CSCF
+        RouteHeader nextHop = nextHopRoute();
+        out.addFirst(nextHop);                                      // outbound Route -> I-CSCF
+        log.debug("TRACE     · added Route -> {}", nextHop.getAddress().getURI());
         if (Request.REGISTER.equals(method)) {
-            out.addFirst(hf.createHeader("Path",
-                    "<sip:" + props.getSelfHost() + ":" + props.getSelfPort() + ";lr>"));
+            String path = "<sip:" + props.getSelfHost() + ":" + props.getSelfPort() + ";lr>";
+            out.addFirst(hf.createHeader("Path", path));
+            log.debug("TRACE     · added Path {} (return route for terminating requests)", path);
         }
         if (isDialogForming(method)) {
             out.addFirst(recordRoute());
+            log.debug("TRACE     · added Record-Route (dialog-forming {})", method);
         }
         ViaHeader via = hf.createViaHeader(props.getSelfHost(), props.getSelfPort(), transport(), null);
         via.setRPort();
         out.addFirst(via);
+        log.debug("TRACE     · added own Via {}:{}/{};rport",
+                props.getSelfHost(), props.getSelfPort(), transport());
 
         ClientTransaction clientTx = provider.getNewClientTransaction(out);
         clientTx.setApplicationData(serverTx);
@@ -149,6 +166,10 @@ public class PcscfSipListener implements SipListener {
                 props.getNextHop().getHost(), props.getNextHop().getPort(), callId, out.toString());
         clientTx.sendRequest();
         metrics.recordSent(method);
+        log.debug("TRACE OUT -> {} callId={} dst={}:{} branch={}",
+                method, callId, props.getNextHop().getHost(), props.getNextHop().getPort(),
+                clientTx.getBranchId());
+        log.debug("TRACE OUT -> full message:\n{}", out);
     }
 
     private void forwardAck(SipProvider provider, Request request) throws Exception {
@@ -159,6 +180,8 @@ public class PcscfSipListener implements SipListener {
         out.addFirst(nextHopRoute());
         provider.sendRequest(out);
         metrics.recordSent(Request.ACK);
+        log.debug("TRACE OUT -> ACK callId={} dst={}:{}", callId(request),
+                props.getNextHop().getHost(), props.getNextHop().getPort());
     }
 
     // ----------------------------------------------------------------- responses
@@ -170,6 +193,10 @@ public class PcscfSipListener implements SipListener {
         String callId = callId(response);
         MDC.put("callId", callId);
         try {
+            log.debug("TRACE IN  <- {} {} callId={} from upstream {}:{}",
+                    status, response.getReasonPhrase(), callId,
+                    props.getNextHop().getHost(), props.getNextHop().getPort());
+            log.debug("TRACE IN  <- full message:\n{}", response);
             capture(HepCaptureService.Direction.INBOUND, props.getNextHop().getHost(),
                     props.getNextHop().getPort(), props.getSelfHost(), props.getSelfPort(),
                     callId, response.toString());
@@ -178,8 +205,11 @@ public class PcscfSipListener implements SipListener {
             response.removeFirst(ViaHeader.NAME);
             if (response.getHeader(ViaHeader.NAME) == null) {
                 // Response was addressed to this proxy itself; nothing to relay.
+                log.debug("TRACE     · no Via left after popping our own — response was for us, not relaying");
                 return;
             }
+            log.debug("TRACE     · popped own Via, next Via is {}:{}",
+                    topViaHost(response), portOf(response));
 
             ClientTransaction clientTx = event.getClientTransaction();
             ServerTransaction serverTx =
@@ -190,8 +220,11 @@ public class PcscfSipListener implements SipListener {
 
             if (serverTx != null) {
                 serverTx.sendResponse(response);
+                log.debug("TRACE OUT -> {} callId={} via server tx branch={}",
+                        status, callId, serverTx.getBranchId());
             } else {
                 ((SipProvider) event.getSource()).sendResponse(response);
+                log.debug("TRACE OUT -> {} callId={} statelessly (no server tx)", status, callId);
             }
             metrics.recordSent(String.valueOf(status));
         } catch (Exception e) {
@@ -205,7 +238,7 @@ public class PcscfSipListener implements SipListener {
 
     @Override
     public void processTimeout(TimeoutEvent event) {
-        log.warn("Transaction timeout ({})", event.getTimeout());
+        log.warn("TRACE !!! transaction timeout ({}) — upstream did not answer", event.getTimeout());
     }
 
     @Override

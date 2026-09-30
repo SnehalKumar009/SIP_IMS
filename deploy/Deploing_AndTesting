@@ -1,0 +1,52 @@
+To build a particular service
+==============================
+mvn clean install -pl services/p-cscf/ -am
+mvn clean install -pl services/i-cscf/ -am
+mvn clean install -pl services/c-cscf/ -am
+mvn clean install -pl services/hss/ -am
+
+These will each indiviadually build its own jar binary
+
+
+Disable and enable registry
+===========================
+microk8s disable registry && microk8s enable registry
+
+Check if all repository are cleared
+===================================
+until curl -s --max-time 2 http://localhost:32000/v2/_catalog 2>/dev/null | grep -q repositories; do sleep 2; done; curl -s http://localhost:32000/v2/_catalog
+{"repositories":[]}
+
+repositories":[] - means eveything is cleared
+
+
+Push all in one go
+===================
+for t in ims/hss:20092026 ims/i-cscf:22092026 ims/s-cscf:29092026 ims/p-cscf:29092026_2; do docker push localhost:32000/$t; done
+
+
+To create a docker image
+=========================
+docker build -t localhost:32000/ims/p-cscf:29092026 services/p-cscf
+The above command will build docker based on the docker file in the folder services/p-cscf
+with tag 29092026
+
+This is will created locally
+
+To push the docker image to local registry
+===========================================
+docker push localhost:32000/ims/p-cscf:29092026
+
+
+PCSCF=$(microk8s kubectl -n ims-core get pod -l app.kubernetes.io/name=p-cscf -o jsonpath='{.items[0].status.podIP}')
+
+
+sipp -sf sipp_scenarios/uc360_register.xml $PCSCF:5060 -s alice -m 1 -trace_msg
+
+========================================
+sipp
+For Registeing alice
+sipp -sf sipp_scenarios/alice_register.xml 10.1.12.217:5060 -inf ./sipp_scenarios/users.csv -s alice -au alice@ims.snehal.com -ap alice-secret -m 1 -trace_msg
+
+For Registering bob
+sipp -sf sipp_scenarios/alice_register.xml 10.1.12.217:5060 -inf ./sipp_scenarios/users.csv -s bob -au bob@ims.snehal.com -ap bob-secret -m 1 -trace_msg

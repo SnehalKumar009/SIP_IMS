@@ -80,10 +80,15 @@ public class ScscfSipListener implements SipListener {
         Timer.Sample sample = metrics.startTimer();
         try {
             SipProvider provider = (SipProvider) event.getSource();
+            log.debug("TRACE IN  <- {} callId={} src={}:{} ruri={}",
+                    method, callId, SipMessages.topViaHost(request),
+                    SipMessages.topViaPort(request), request.getRequestURI());
+            log.debug("TRACE IN  <- full message:\n{}", request);
             proxy.captureInbound(request, callId);
 
             // ACK is end-to-end within an established dialog: forward statelessly.
             if (Request.ACK.equals(method)) {
+                log.debug("TRACE     · ACK is end-to-end, forwarding statelessly");
                 forwardAck(provider, request, callId);
                 return;
             }
@@ -94,18 +99,20 @@ public class ScscfSipListener implements SipListener {
             }
 
             if (Request.CANCEL.equals(method)) {
+                log.debug("TRACE     · CANCEL — proxying onto the pending INVITE transaction");
                 cancel(provider, request, serverTx, callId);
                 return;
             }
 
             if (proxy.isLooping(request)) {
-                log.warn("Loop detected for {} {}", method, callId);
+                log.warn("TRACE !!! loop detected for {} {} — too many of our own Via headers", method, callId);
                 proxy.reject(serverTx, request, Response.LOOP_DETECTED);
                 return;
             }
 
             // While draining, established dialogs keep working; new ones go elsewhere.
             if (drain.isDraining() && isOutOfDialog(request)) {
+                log.debug("TRACE     · draining, refusing new out-of-dialog {} with 503", method);
                 Header retryAfter = proxy.stack().getHeaderFactory()
                         .createHeader("Retry-After", String.valueOf(drain.retryAfterSeconds()));
                 proxy.respond(serverTx, request, Response.SERVICE_UNAVAILABLE, retryAfter);
@@ -113,13 +120,16 @@ public class ScscfSipListener implements SipListener {
             }
 
             if (Request.REGISTER.equals(method)) {
+                log.debug("TRACE     · dispatching to RegistrarHandler");
                 registrar.handle(request, serverTx);
                 return;
             }
 
+            log.debug("TRACE     · dispatching to SessionHandler");
             ClientTransaction clientTx = sessions.handle(provider, request, serverTx, method, callId);
             if (clientTx != null && Request.INVITE.equals(method)) {
                 pendingInvites.put(callId, clientTx);
+                log.debug("TRACE     · remembered pending INVITE for callId={}", callId);
             }
         } catch (Exception e) {
             metrics.recordDropped();
@@ -170,6 +180,9 @@ public class ScscfSipListener implements SipListener {
         String callId = SipMessages.callId(response);
         MDC.put("callId", callId);
         try {
+            log.debug("TRACE IN  <- {} {} callId={} cseqMethod={}",
+                    status, response.getReasonPhrase(), callId, cseqMethod(response));
+            log.debug("TRACE IN  <- full message:\n{}", response);
             proxy.captureInbound(response, callId);
 
             if (isFinal(status) && Request.INVITE.equals(cseqMethod(response))) {
@@ -183,8 +196,11 @@ public class ScscfSipListener implements SipListener {
             response.removeFirst(ViaHeader.NAME);
             if (response.getHeader(ViaHeader.NAME) == null) {
                 // Response was addressed to this proxy itself; nothing to relay.
+                log.debug("TRACE     · no Via left after popping our own — not relaying");
                 return;
             }
+            log.debug("TRACE     · popped own Via, next Via is {}:{}",
+                    SipMessages.topViaHost(response), SipMessages.topViaPort(response));
 
             proxy.captureOutboundResponse(response, response);
 
@@ -193,8 +209,11 @@ public class ScscfSipListener implements SipListener {
                     clientTx != null ? (ServerTransaction) clientTx.getApplicationData() : null;
             if (serverTx != null) {
                 serverTx.sendResponse(response);
+                log.debug("TRACE OUT -> {} callId={} via server tx branch={}",
+                        status, callId, serverTx.getBranchId());
             } else {
                 ((SipProvider) event.getSource()).sendResponse(response);
+                log.debug("TRACE OUT -> {} callId={} statelessly (no server tx)", status, callId);
             }
             metrics.recordSent(String.valueOf(status));
         } catch (Exception e) {
@@ -208,7 +227,7 @@ public class ScscfSipListener implements SipListener {
 
     @Override
     public void processTimeout(TimeoutEvent event) {
-        log.warn("Transaction timeout ({})", event.getTimeout());
+        log.warn("TRACE !!! transaction timeout ({}) — downstream did not answer", event.getTimeout());
     }
 
     @Override

@@ -12,6 +12,7 @@ data:
   # Overrides layered on top of the image's packaged application.yml.
   SPRING_APPLICATION_JSON: |
     {
+      "logging": { "level": { "com.snehal.ims": "DEBUG" } },
       "ims": {
         "pcscf": {
           "next-hop": { "host": "i-cscf.ims-core.svc.cluster.local", "port": 5060, "transport": "udp" },
@@ -68,8 +69,8 @@ spec:
     spec:
       containers:
         - name: p-cscf
-          image: localhost:32000/ims/p-cscf:21092026
-          imagePullPolicy: IfNotPresent
+          image: localhost:32000/ims/p-cscf:latest
+          imagePullPolicy: Always
           envFrom:
             - configMapRef:
                 name: p-cscf-config

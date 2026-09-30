@@ -23,8 +23,12 @@ management:
 grpc:
   client:
     hss:
-      address: static://hss.ims-core.svc.cluster.local:9090
+      address: dns:///hss.ims-core.svc.cluster.local:9090
       negotiation-type: plaintext
+      # Connect the channel at startup, not on the first Cx call: dns:/// resolves
+      # lazily, so otherwise the first REGISTER pays DNS + TCP + HTTP/2 setup and
+      # blows its 750ms deadline.
+      immediate-connect-timeout: 5s
 
 resilience4j:
   circuitbreaker:
@@ -65,3 +69,8 @@ ims:
       transport: udp
     cx:
       timeout: 750ms
+
+# Verbose signaling trace. Drop to INFO once the flows are familiar.
+logging:
+  level:
+    com.snehal.ims: DEBUG

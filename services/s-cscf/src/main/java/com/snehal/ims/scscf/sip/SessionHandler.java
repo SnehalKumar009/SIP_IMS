@@ -73,8 +73,10 @@ public class SessionHandler {
         }
 
         if (isInDialog(request)) {
+            log.debug("TRACE SES · in-dialog {} (To has a tag) — routing by existing Route set", method);
             return forwardInDialog(provider, out, serverTx, method, callId);
         }
+        log.debug("TRACE SES · initial {} (no To tag) — classifying session case", method);
         return forwardInitial(provider, out, serverTx, method, callId);
     }
 
@@ -86,6 +88,7 @@ public class SessionHandler {
         String servedUser = sessionCase == SessionCase.TERMINATING
                 ? SipMessages.requestUriAor(out)
                 : SipMessages.fromAor(out);
+        log.debug("TRACE SES · sessionCase={} servedUser={}", sessionCase, servedUser);
         ifc.evaluate(servedUser, method, sessionCase);
 
         if (sessionCase == SessionCase.TERMINATING && !retarget(out, serverTx, servedUser)) {
@@ -112,7 +115,9 @@ public class SessionHandler {
      */
     private boolean retarget(Request out, ServerTransaction serverTx, String aor) throws Exception {
         List<Binding> bindings = store.find(aor);
+        log.debug("TRACE SES · retarget lookup for {} -> {} binding(s)", aor, bindings.size());
         if (bindings.isEmpty()) {
+            log.debug("TRACE SES · no bindings, rejecting 480 Temporarily Unavailable");
             proxy.reject(serverTx, out, Response.TEMPORARILY_UNAVAILABLE);
             return false;
         }
@@ -137,6 +142,7 @@ public class SessionHandler {
         }
         out.addHeader(proxy.stack().getHeaderFactory()
                 .createHeader(SipMessages.P_ASSERTED_IDENTITY, "<" + servedUser + ">"));
+        log.debug("TRACE SES · asserted identity <{}> (UE-supplied identity headers stripped)", servedUser);
     }
 
     // -------------------------------------------------------------- in-dialog requests
@@ -144,6 +150,7 @@ public class SessionHandler {
     private ClientTransaction forwardInDialog(SipProvider provider, Request out, ServerTransaction serverTx,
                                               String method, String callId) throws Exception {
         if (Request.BYE.equals(method)) {
+            log.debug("TRACE SES · BYE — closing session and emitting charging end event");
             endSession(callId);
         }
         applyMediaOffer(out, callId);
