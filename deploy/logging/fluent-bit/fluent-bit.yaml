@@ -1,0 +1,67 @@
+# Fluent Bit pipeline: container log files on this node -> Kafka topic ims-logs.
+#
+#   tail        follow /var/log/containers/*_<ns>_*.log for the IMS namespaces
+#   cri         undo containerd's "<time> <stream> <F|P> <line>" framing, rejoin split lines
+#   kubernetes  add pod / namespace / labels / node from the API server, and decode the
+#               app's JSON line into top-level fields (service.name, sip.call_id, ...)
+#   kafka       produce one JSON document per log line to ims-logs
+service:
+  flush: 1
+  log_level: info
+  http_server: on
+  http_listen: 0.0.0.0
+  http_port: 2020
+  health_check: on
+
+pipeline:
+  inputs:
+    - name: tail
+      # Tag becomes kube.var.log.containers.<file>, which the kubernetes filter
+      # parses back into pod, namespace and container names.
+      tag: kube.*
+      path: /var/log/containers/*_ims-core_*.log,/var/log/containers/*_monitoring_*.log
+      multiline.parser: cri
+      # Read offsets survive a Fluent Bit restart, so lines are neither lost nor re-sent.
+      db: /var/lib/fluent-bit/tail-containers.db
+      db.locking: true
+      mem_buf_limit: 32MB
+      # DEBUG lines embed whole SIP messages; the 32k default would drop them.
+      buffer_chunk_size: 64k
+      buffer_max_size: 512k
+      skip_long_lines: on
+      refresh_interval: 10
+
+  filters:
+    - name: kubernetes
+      match: kube.*
+      # Lift the app's JSON into the record and drop the raw string. Lines that are
+      # not JSON (e.g. the Spring banner) keep their text in `log`.
+      merge_log: on
+      keep_log: off
+      labels: on
+      annotations: off
+      buffer_size: 256k
+
+    # cri parser leftovers: `_p` is the partial-line flag (meaningless once lines are
+    # rejoined) and `time` repeats the record time already written as event.created.
+    - name: modify
+      match: kube.*
+      remove:
+        - _p
+        - time
+
+  outputs:
+    - name: kafka
+      match: kube.*
+      brokers: ims-kafka-kafka-bootstrap.kafka.svc.cluster.local:9092
+      topics: ims-logs
+      format: json
+      # The default key is @timestamp, which would overwrite the time the application
+      # logged. The collection time goes to ECS event.created instead.
+      timestamp_key: event.created
+      timestamp_format: iso8601_ns
+      # Best-effort log stream: leader ack only (the charging stream uses acks=all).
+      rdkafka.request.required.acks: 1
+      rdkafka.compression.codec: lz4
+      rdkafka.queue.buffering.max.ms: 200
+      rdkafka.log.connection.close: false

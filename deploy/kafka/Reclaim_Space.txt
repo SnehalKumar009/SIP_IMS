@@ -1,0 +1,3 @@
+microk8s kubectl -n kafka get pvc                    # see what exists
+microk8s kubectl -n kafka delete kafka my-cluster    # the Kafka CR
+microk8s kubectl -n kafka delete pvc <name>          # then the claims

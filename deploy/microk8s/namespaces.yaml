@@ -4,6 +4,7 @@
 # - monitoring:  observability stack (Homer/Heplify; Prometheus/Grafana live in the
 #                addon-managed 'observability' namespace)
 # - kafka:       shared Strimzi Kafka cluster (log stream now, charging stream in Phase 6)
+# - logging:     log pipeline (Fluent Bit, Logstash, Elasticsearch, Kibana)
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -35,3 +36,11 @@ metadata:
   labels:
     app.kubernetes.io/part-of: ims-platform
     plane: platform
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: logging
+  labels:
+    app.kubernetes.io/part-of: ims-platform
+    plane: observability

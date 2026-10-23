@@ -1,0 +1,78 @@
+# One Fluent Bit pod per node: container logs are files on the node that ran the
+# container, so the collector has to run where the files are.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: fluent-bit
+  labels:
+    app.kubernetes.io/name: fluent-bit
+    app.kubernetes.io/part-of: ims-platform
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: fluent-bit
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: fluent-bit
+        app.kubernetes.io/part-of: ims-platform
+    spec:
+      serviceAccountName: fluent-bit
+      # Collect from every node, control-plane nodes included.
+      tolerations:
+        - operator: Exists
+      containers:
+        - name: fluent-bit
+          image: cr.fluentbit.io/fluent/fluent-bit:5.1.3
+          imagePullPolicy: IfNotPresent
+          command: ["/fluent-bit/bin/fluent-bit", "-c", "/fluent-bit/etc/ims/fluent-bit.yaml"]
+          ports:
+            - name: http
+              containerPort: 2020
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            # /var/log/pods is root:root 0750 on the node; only uid 0 can read it.
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: config
+              mountPath: /fluent-bit/etc/ims
+            - name: varlog
+              mountPath: /var/log
+              readOnly: true
+            - name: state
+              mountPath: /var/lib/fluent-bit
+      volumes:
+        - name: config
+          configMap:
+            name: fluent-bit-config
+        # Node directories: /var/log/containers symlinks into /var/log/pods.
+        - name: varlog
+          hostPath:
+            path: /var/log
+            type: Directory
+        # Tail offsets database, kept on the node so it outlives the pod.
+        - name: state
+          hostPath:
+            path: /var/lib/fluent-bit
+            type: DirectoryOrCreate

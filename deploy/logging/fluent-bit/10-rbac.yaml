@@ -1,0 +1,34 @@
+# The kubernetes filter looks up the pod behind each log file. Pods live in other
+# namespaces (ims-core, monitoring), so read access must be cluster-wide.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fluent-bit
+  labels:
+    app.kubernetes.io/name: fluent-bit
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ims-fluent-bit
+  labels:
+    app.kubernetes.io/name: fluent-bit
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "namespaces"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ims-fluent-bit
+  labels:
+    app.kubernetes.io/name: fluent-bit
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: ims-fluent-bit
+subjects:
+  - kind: ServiceAccount
+    name: fluent-bit
+    namespace: logging
