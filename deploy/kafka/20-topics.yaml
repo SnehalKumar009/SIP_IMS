@@ -1,0 +1,24 @@
+# Topics on the shared ims-kafka cluster, managed by the Topic Operator.
+#
+# ims-logs: JSON log lines from every IMS pod, produced by Fluent Bit and consumed by
+# Logstash into Elasticsearch. Best-effort by design: short retention, capped size,
+# and Fluent Bit produces with acks=1. The Phase 6 charging topic will be declared
+# here separately with acks=all and long retention — the two streams must not share
+# a topic.
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: ims-logs
+  labels:
+    strimzi.io/cluster: ims-kafka
+spec:
+  # Lets Logstash run up to 3 consumer threads in parallel.
+  partitions: 3
+  replicas: 1
+  config:
+    cleanup.policy: delete
+    # Logs are indexed within seconds; Kafka only buffers them through an
+    # Elasticsearch outage or a backlog replay.
+    retention.ms: 86400000          # 24h
+    retention.bytes: 1073741824     # 1 GiB per partition, so at most 3 GiB on disk
+    segment.bytes: 104857600        # 100 MiB segments, so retention can trim steadily

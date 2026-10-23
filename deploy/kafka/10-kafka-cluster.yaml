@@ -1,0 +1,69 @@
+# Shared Kafka cluster for the IMS platform: the log stream today, the charging stream
+# in Phase 6. Reconciled by the Strimzi Cluster Operator (install-operator.sh).
+#
+# Single node in KRaft mode: one pod is both controller (cluster metadata, replacing
+# ZooKeeper) and broker (stores and serves topic data). Every replication factor is
+# therefore 1 — there is no second copy of anything (see docs/TECH_DEBT.md).
+#
+# Clients connect to the bootstrap Service:
+#   ims-kafka-kafka-bootstrap.kafka.svc.cluster.local:9092   (plaintext)
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaNodePool
+metadata:
+  name: dual-role
+  labels:
+    strimzi.io/cluster: ims-kafka
+spec:
+  replicas: 1
+  roles:
+    - controller
+    - broker
+  storage:
+    type: jbod
+    volumes:
+      - id: 0
+        type: persistent-claim
+        size: 10Gi
+        # Keep the PVC (and the data) if the Kafka resource is deleted.
+        deleteClaim: false
+        # Topic data and KRaft metadata share this one volume.
+        kraftMetadata: shared
+  resources:
+    requests:
+      cpu: 250m
+      memory: 1Gi
+    limits:
+      cpu: "1"
+      memory: 2Gi
+  jvmOptions:
+    -Xms: 1g
+    -Xmx: 1g
+---
+apiVersion: kafka.strimzi.io/v1
+kind: Kafka
+metadata:
+  name: ims-kafka
+spec:
+  kafka:
+    version: 4.3.1
+    metadataVersion: 4.3-IV0
+    listeners:
+      # In-cluster only, no TLS or authentication yet (see docs/TECH_DEBT.md).
+      - name: plain
+        port: 9092
+        type: internal
+        tls: false
+    config:
+      # One broker, so internal topics cannot have more than one replica.
+      offsets.topic.replication.factor: 1
+      transaction.state.log.replication.factor: 1
+      transaction.state.log.min.isr: 1
+      default.replication.factor: 1
+      min.insync.replicas: 1
+      # Topics are declared as KafkaTopic resources, never created implicitly by a
+      # client typo.
+      auto.create.topics.enable: false
+  entityOperator:
+    # Syncs KafkaTopic resources (20-topics.yaml) to real topics. No KafkaUser
+    # resources are used, so the User Operator is left out.
+    topicOperator: {}

@@ -54,6 +54,8 @@ resilience4j:
         max-wait-duration: 50ms
 
 ims:
+  # Stamped into every log line as service.version (Maven resource filtering).
+  service-version: '@project.version@'
   sip:
     enabled: true
     stack-name: s-cscf
