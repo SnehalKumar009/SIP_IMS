@@ -50,6 +50,8 @@ resilience4j:
         permitted-number-of-calls-in-half-open-state: 3
 
 ims:
+  # Stamped into every log line as service.version (Maven resource filtering).
+  service-version: '@project.version@'
   # HSS speaks gRPC, not SIP, and has nothing to mirror to Homer.
   sip:
     enabled: false

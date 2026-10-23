@@ -21,6 +21,8 @@ management:
 
 # Shared Jain SIP stack (shared-telecom-lib). Signaling entry point on 5060.
 ims:
+  # Stamped into every log line as service.version (Maven resource filtering).
+  service-version: '@project.version@'
   sip:
     enabled: true
     stack-name: p-cscf

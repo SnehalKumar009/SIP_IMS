@@ -7,18 +7,41 @@
         <appender-ref ref="JSON_CONSOLE"/>
     </root>
 
-  Emits one JSON object per line (Loki/ELK friendly) with MDC fields such as the
-  SIP Call-ID promoted to top-level keys for correlation.
+  Emits one JSON object per line using Elastic Common Schema (ECS) field names, so the
+  Fluent Bit -> Kafka -> Logstash -> Elasticsearch pipeline indexes it without renames.
+  Every line identifies its emitter:
+
+    service.name         spring.application.name (p-cscf, i-cscf, s-cscf, hss)
+    service.version      ims.service-version, filtered from the Maven project version
+    service.instance.id  HOSTNAME, which Kubernetes sets to the pod name
+
+  The SIP Call-ID (MDC) is promoted to sip.call_id so one call can be followed across
+  every pod it touched.
 -->
 <included>
+    <springProperty scope="context" name="IMS_SERVICE_NAME"
+                    source="spring.application.name" defaultValue="unknown"/>
+    <springProperty scope="context" name="IMS_SERVICE_VERSION"
+                    source="ims.service-version" defaultValue="unknown"/>
+
     <appender name="JSON_CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
         <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <!-- Context properties (HOSTNAME, the IMS_* helpers above) are already mapped
+                 onto ECS fields below; emitting them too would duplicate every value. -->
+            <includeContext>false</includeContext>
             <includeMdcKeyName>callId</includeMdcKeyName>
             <includeMdcKeyName>sipMethod</includeMdcKeyName>
             <includeMdcKeyName>traceId</includeMdcKeyName>
-            <customFields>{"platform":"ims"}</customFields>
+            <mdcKeyFieldName>callId=sip.call_id</mdcKeyFieldName>
+            <mdcKeyFieldName>sipMethod=sip.method</mdcKeyFieldName>
+            <mdcKeyFieldName>traceId=trace.id</mdcKeyFieldName>
+            <customFields>{"platform":"ims","service.name":"${IMS_SERVICE_NAME}","service.version":"${IMS_SERVICE_VERSION}","service.instance.id":"${HOSTNAME:-unknown}"}</customFields>
             <fieldNames>
-                <timestamp>timestamp</timestamp>
+                <timestamp>@timestamp</timestamp>
+                <level>log.level</level>
+                <logger>log.logger</logger>
+                <thread>process.thread.name</thread>
+                <stackTrace>error.stack_trace</stackTrace>
                 <version>[ignore]</version>
                 <levelValue>[ignore]</levelValue>
             </fieldNames>

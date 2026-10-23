@@ -1,0 +1,9 @@
+# Shared Strimzi Kafka cluster for the IMS platform.
+# Prerequisite (once):  ./deploy/kafka/install-operator.sh
+# Apply with:           microk8s kubectl apply -k deploy/kafka
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: kafka
+resources:
+  - 10-kafka-cluster.yaml
+  - 20-topics.yaml

@@ -82,6 +82,17 @@ None of the Dockerfiles create a non-root user and no `securityContext` is set o
 Cx requests carry no nonce or sequence number, so a captured SAR could be replayed. Low impact
 while the interface is idempotent, and largely moot once TD-001 lands.
 
+### TD-009 — Kafka listener is plaintext with no authentication
+**Status:** OPEN · **Severity:** medium · **Introduced:** Logging phase
+
+`ims-kafka` exposes only the `plain` internal listener on 9092. Any pod can produce to or consume
+from every topic, including `ims-logs` (full SIP messages, identities) and, from Phase 6, the
+charging stream — a forged charging event would be indistinguishable from a real one.
+
+**Done when:** a TLS listener with SCRAM-SHA-512 or mTLS authentication, `KafkaUser` resources with
+per-topic ACLs (Fluent Bit write-only on `ims-logs`, Logstash read-only), and the plain listener
+removed.
+
 ---
 
 ## Correctness / standards conformance
@@ -236,6 +247,19 @@ challenge issued by one pod cannot be answered at another. Harmless under TD-022
 pinned to a pod) but blocks the stateless-replica model.
 
 **Done when:** both move to Redis alongside the registration store.
+
+### TD-029 — Kafka is a single broker with replication factor 1
+**Status:** OPEN · **Severity:** medium · **Introduced:** Logging phase
+
+`ims-kafka` runs one dual-role (controller + broker) node, so every topic and the KRaft metadata
+log have exactly one copy on one hostpath volume. A pod restart pauses all producers; losing the
+volume loses unconsumed logs and, from Phase 6, unbilled charging events.
+
+**Mitigation in place:** `ims-logs` is best-effort by design, and producers buffer briefly
+through a broker restart.
+
+**Done when:** three controller and three broker nodes, `default.replication.factor: 3`,
+`min.insync.replicas: 2`, and the charging topic produced with `acks=all`.
 
 ---
 
