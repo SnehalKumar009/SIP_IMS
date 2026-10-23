@@ -1,0 +1,28 @@
+Command:
+microk8s kubectl -n logging get secret ims-es-es-elastic-user -o jsonpath='{.data.elastic}' | base64 -d; echo
+
+Output:
+rGQthL6CQ3KRJzm7YLnvi7Fz
+
+Start Packet Forwarding
+=======================
+microk8s kubectl -n logging port-forward svc/ims-kibana-kb-http 5601
+
+
+https://localhost:5601
+User - elastic
+password: Output from above command
+
+
+================================================
+Delete the secrets after checking
+microk8s kubectl -n logging delete secret ims-es-es-elastic-user
+
+
+=========================++
+
+Generate a new Password:
+s5z3u27SWjjJbZ2OJy3CdpK7
+
+microk8s kubectl -n logging port-forward svc/ims-kibana-kb-http 5601
+
