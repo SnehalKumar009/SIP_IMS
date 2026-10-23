@@ -1,0 +1,64 @@
+{
+  "_meta": {
+    "description": "IMS platform logs (Fluent Bit -> Kafka -> Logstash), data stream logs-ims-default",
+    "managed_by": "deploy/logging/elastic/index-setup"
+  },
+  "index_patterns": [
+    "logs-ims-*"
+  ],
+  "data_stream": {},
+  "priority": 200,
+  "composed_of": [
+    "logs@mappings",
+    "logs@settings",
+    "ecs@mappings"
+  ],
+  "template": {
+    "settings": {
+      "index": {
+        "number_of_replicas": 0,
+        "lifecycle": {
+          "name": "logs-ims"
+        }
+      }
+    },
+    "mappings": {
+      "properties": {
+        "service": {
+          "properties": {
+            "name": {
+              "type": "keyword"
+            },
+            "version": {
+              "type": "keyword"
+            },
+            "instance": {
+              "properties": {
+                "id": {
+                  "type": "keyword"
+                }
+              }
+            }
+          }
+        },
+        "sip": {
+          "properties": {
+            "call_id": {
+              "type": "keyword"
+            },
+            "method": {
+              "type": "keyword"
+            }
+          }
+        },
+        "kubernetes": {
+          "properties": {
+            "labels": {
+              "type": "flattened"
+            }
+          }
+        }
+      }
+    }
+  }
+}

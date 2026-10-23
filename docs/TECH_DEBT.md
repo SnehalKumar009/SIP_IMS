@@ -93,6 +93,18 @@ charging stream — a forged charging event would be indistinguishable from a re
 per-topic ACLs (Fluent Bit write-only on `ims-logs`, Logstash read-only), and the plain listener
 removed.
 
+### TD-034 — Kibana and Elasticsearch use the `elastic` superuser and a self-signed CA
+**Status:** OPEN · **Severity:** medium · **Introduced:** Logging phase
+
+People log in to Kibana as `elastic`, the built-in superuser, whose password ECK keeps in the
+`ims-es-es-elastic-user` Secret. Anyone who can read Secrets in `logging` has full control of the
+log store. ECK's self-signed CA also means every browser and client gets an untrusted-certificate
+warning.
+
+**Done when:** named users or SSO with least-privilege roles (a read-only `ims-logs-viewer`), the
+`elastic` user kept for break-glass only, and ES/Kibana HTTP certificates issued by cert-manager
+from a trusted CA.
+
 ---
 
 ## Correctness / standards conformance
@@ -292,3 +304,26 @@ HA1 immediately (the plaintext is never persisted).
 
 Subscribers can only be created by the seeder or by direct SQL. There is no Sh/Cx provisioning
 interface and no audit trail of who changed what.
+
+### TD-033 — Elasticsearch is a single node with no replicas or snapshots
+**Status:** OPEN · **Severity:** low · **Introduced:** Logging phase
+
+`ims-es` runs one node and the `logs-ims` template sets `number_of_replicas: 0` so the cluster can
+be green. Losing the node or its hostpath volume loses every indexed log; nothing is snapshotted.
+
+**Mitigation in place:** logs are also in Kafka for 24h (`ims-logs`) and can be re-consumed.
+
+**Done when:** three nodes with one replica, plus a snapshot repository and SLM policy.
+
+### TD-035 — Logstash can lose in-flight logs on a crash
+**Status:** ACCEPTED · **Severity:** low · **Introduced:** Logging phase
+
+The Logstash Kafka input commits consumer offsets on a timer, independently of Elasticsearch
+acknowledging the batch, and the pipeline uses the in-memory queue. If the pod dies between a
+commit and the bulk request, those events are skipped on restart.
+
+**Mitigation in place:** the log stream is best-effort by design; lost events are still in Kafka
+for 24h and can be replayed by resetting the `logstash-ims-logs` consumer group.
+
+**Done when:** a persistent queue (`queue.type: persisted`) on the Logstash PVC, so events are
+on disk before their offsets can be committed.

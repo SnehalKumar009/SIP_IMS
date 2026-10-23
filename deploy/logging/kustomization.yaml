@@ -1,13 +1,18 @@
 # Log pipeline for the IMS platform:
 #   pods -> Fluent Bit -> Kafka (ims-logs) -> Logstash -> Elasticsearch -> Kibana
-# Prerequisite: deploy/kafka is applied and ims-kafka is Ready.
-# Apply with:   microk8s kubectl apply -k deploy/logging
+# Prerequisites: deploy/kafka is applied and ims-kafka is Ready;
+#                ./deploy/logging/elastic/install-operator.sh has run (ECK CRDs).
+# Apply with:    microk8s kubectl apply -k deploy/logging
+# Then, once:    ./deploy/logging/elastic/index-setup/apply.sh
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: logging
 resources:
   - fluent-bit/10-rbac.yaml
   - fluent-bit/20-daemonset.yaml
+  - elastic/10-elasticsearch.yaml
+  - elastic/20-kibana.yaml
+  - logstash/30-logstash.yaml
 configMapGenerator:
   # Hash-suffixed name: editing fluent-bit.yaml rolls the DaemonSet automatically.
   - name: fluent-bit-config

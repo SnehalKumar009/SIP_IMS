@@ -5,6 +5,7 @@
 #                addon-managed 'observability' namespace)
 # - kafka:       shared Strimzi Kafka cluster (log stream now, charging stream in Phase 6)
 # - logging:     log pipeline (Fluent Bit, Logstash, Elasticsearch, Kibana)
+# - elastic-system: ECK operator (manages Elasticsearch, Kibana, Logstash in logging)
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -44,3 +45,11 @@ metadata:
   labels:
     app.kubernetes.io/part-of: ims-platform
     plane: observability
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: elastic-system
+  labels:
+    app.kubernetes.io/part-of: ims-platform
+    plane: platform

@@ -44,11 +44,15 @@ pipeline:
 
     # cri parser leftovers: `_p` is the partial-line flag (meaningless once lines are
     # rejoined) and `time` repeats the record time already written as event.created.
+    # A line that was not JSON still sits in `log`; ECS reserves `log` for an object
+    # (log.level, log.logger), so its text moves to `message`. rename only fires when
+    # `log` exists and `message` does not, so merged JSON lines are left alone.
     - name: modify
       match: kube.*
       remove:
         - _p
         - time
+      rename: log message
 
   outputs:
     - name: kafka

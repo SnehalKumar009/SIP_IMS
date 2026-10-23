@@ -1,0 +1,29 @@
+# Kibana for the IMS log stream. elasticsearchRef makes ECK wire it to ims-es: the
+# CA certificate, a dedicated service-account token and the URL are all injected, so
+# no credentials appear here.
+#
+# Reach it with:
+#   microk8s kubectl -n logging port-forward svc/ims-kibana-kb-http 5601
+#   https://localhost:5601   user: elastic
+#   password: microk8s kubectl -n logging get secret ims-es-es-elastic-user \
+#               -o jsonpath='{.data.elastic}' | base64 -d
+apiVersion: kibana.k8s.elastic.co/v1
+kind: Kibana
+metadata:
+  name: ims-kibana
+spec:
+  version: 9.5.5
+  count: 1
+  elasticsearchRef:
+    name: ims-es
+  podTemplate:
+    spec:
+      containers:
+        - name: kibana
+          resources:
+            requests:
+              cpu: 250m
+              memory: 1Gi
+            limits:
+              cpu: "1"
+              memory: 1536Mi

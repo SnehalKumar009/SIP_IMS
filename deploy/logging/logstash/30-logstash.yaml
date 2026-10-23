@@ -1,0 +1,99 @@
+# Logstash: consumes ims-logs from Kafka and indexes it into the Elasticsearch data
+# stream logs-ims-default. Reconciled by the ECK operator.
+#
+# elasticsearchRefs makes ECK create a dedicated Elasticsearch user for this Logstash
+# (write access to logs-*, not superuser) and inject it as environment variables named
+# after clusterName: IMS_ES_HOSTS, IMS_ES_USER, IMS_ES_PASSWORD,
+# IMS_ES_SSL_CERTIFICATE_AUTHORITY.
+#
+# Delivery is at-least-once in normal operation but best-effort on a crash: the Kafka
+# input commits offsets on a timer, not after Elasticsearch acknowledges, so events in
+# Logstash's in-memory queue can be lost if the pod dies (see docs/TECH_DEBT.md).
+apiVersion: logstash.k8s.elastic.co/v1alpha1
+kind: Logstash
+metadata:
+  name: ims-logstash
+spec:
+  version: 9.5.5
+  count: 1
+  elasticsearchRefs:
+    - name: ims-es
+      clusterName: ims
+  podTemplate:
+    spec:
+      containers:
+        - name: logstash
+          env:
+            - name: LS_JAVA_OPTS
+              value: "-Xms1g -Xmx1g"
+          resources:
+            requests:
+              cpu: 250m
+              memory: 1536Mi
+            limits:
+              cpu: "1"
+              memory: 2Gi
+  pipelines:
+    - pipeline.id: ims-logs
+      pipeline.workers: 2
+      config.string: |
+        input {
+          kafka {
+            bootstrap_servers => "ims-kafka-kafka-bootstrap.kafka.svc.cluster.local:9092"
+            topics => ["ims-logs"]
+            group_id => "logstash-ims-logs"
+            client_id => "ims-logstash"
+            # One thread per partition of ims-logs.
+            consumer_threads => 3
+            # A new consumer group starts from the oldest retained record (24h).
+            auto_offset_reset => "earliest"
+            # Each Kafka record is one JSON document from Fluent Bit. A record that
+            # carries "@timestamp" (every app line) keeps it as the event time.
+            codec => json
+          }
+        }
+
+        filter {
+          # Lines that are not app JSON (Postgres, the Spring banner, pods still on
+          # pre-ECS images) have no log time of their own; the container runtime's
+          # write time is the next best thing, and is right even when replaying a
+          # backlog.
+          if ![log.level] and [event.created] {
+            date {
+              match => ["event.created", "ISO8601"]
+            }
+          }
+
+          # Every document gets a service.name: the app's own value, else the pod's
+          # app.kubernetes.io/name label, else the container name.
+          if ![service.name] {
+            mutate {
+              copy => { "[kubernetes][labels][app.kubernetes.io/name]" => "service.name" }
+            }
+          }
+          if ![service.name] {
+            mutate {
+              copy => { "[kubernetes][container_name]" => "service.name" }
+            }
+          }
+
+          mutate {
+            remove_field => ["@version"]
+          }
+        }
+
+        output {
+          elasticsearch {
+            hosts => ["${IMS_ES_HOSTS}"]
+            ssl_enabled => true
+            ssl_certificate_authorities => "${IMS_ES_SSL_CERTIFICATE_AUTHORITY}"
+            user => "${IMS_ES_USER}"
+            password => "${IMS_ES_PASSWORD}"
+            # Writes to the data stream logs-ims-default, which the logs-ims index
+            # template (elastic/index-setup) configures.
+            data_stream => "true"
+            data_stream_type => "logs"
+            data_stream_dataset => "ims"
+            data_stream_namespace => "default"
+          }
+        }

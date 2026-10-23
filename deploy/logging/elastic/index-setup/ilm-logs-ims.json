@@ -1,0 +1,24 @@
+{
+  "policy": {
+    "_meta": {
+      "description": "IMS platform logs: roll over daily, delete after 7 days",
+      "managed_by": "deploy/logging/elastic/index-setup"
+    },
+    "phases": {
+      "hot": {
+        "actions": {
+          "rollover": {
+            "max_age": "1d",
+            "max_primary_shard_size": "5gb"
+          }
+        }
+      },
+      "delete": {
+        "min_age": "7d",
+        "actions": {
+          "delete": {}
+        }
+      }
+    }
+  }
+}
