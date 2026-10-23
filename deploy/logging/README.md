@@ -145,3 +145,21 @@ PW=$(microk8s kubectl -n logging get secret ims-es-es-elastic-user -o jsonpath='
 microk8s kubectl -n logging exec ims-es-es-default-0 -c elasticsearch -- \
   curl -sk -u "elastic:$PW" "https://localhost:9200/logs-ims-default::failures/_count"
 ```
+
+## Troubleshooting
+
+**Documents in the failure store with `failed to parse field [log] of type [keyword]`.**
+The current backing index learned `log` as a string from a record written before Fluent Bit moved
+raw text to `message`. ECS needs `log` to be an object (`log.level`), so every app line then fails.
+The template now declares `log` as an object and Logstash renames a stray string `log`, so this
+should not recur. If it does, re-run `index-setup/apply.sh` and start a fresh backing index:
+
+```bash
+microk8s kubectl -n logging exec ims-es-es-default-0 -c elasticsearch -- \
+  curl -sk -u "elastic:$PW" -X POST "https://localhost:9200/logs-ims-default/_rollover"
+```
+
+Mapping changes in the template only reach new backing indices; a rollover applies them at once.
+
+**Logstash pipeline edits** are hot-reloaded: ECK updates the mounted pipeline and Logstash logs
+`Reloading pipeline` without the pod restarting.

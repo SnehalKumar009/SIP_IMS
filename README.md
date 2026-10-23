@@ -12,6 +12,7 @@ Built pod-by-pod as a learning + reference project spanning **Kubernetes** and *
 | Media      | RTPEngine                        | Native C (Sipwise), Kubernetes DaemonSet        |
 | Charging   | CDF-billing                      | Kafka consumer → ClickHouse                     |
 | Observ.    | Homer (HEPv3), Prometheus, Grafana | kube-prometheus-stack + Heplify-Server        |
+| Logs       | Fluent Bit → Kafka → Logstash → Elasticsearch → Kibana | Strimzi + ECK operators |
 
 Inter-process: **gRPC** for the Cx interface, **Kafka** for charging, **Resilience4j** on every boundary.
 
@@ -24,6 +25,8 @@ services/                  deployable Spring Boot pods (added per phase)
 deploy/
   microk8s/                cluster bootstrap (addons, namespaces; NodePort/hostPort SIP)
   monitoring/              Homer + Prometheus ServiceMonitors
+  kafka/                   Strimzi operator + shared Kafka cluster (ims-logs topic)
+  logging/                 Fluent Bit, ECK (Elasticsearch, Kibana, Logstash), Kibana content
   manifests/  helm/  terraform/   (per-pod deploy, added per phase)
 tests/sipp/                end-to-end SIPp scenarios
 docs/                      architecture + ADRs
@@ -60,6 +63,7 @@ microk8s kubectl apply -k deploy/monitoring
 - **Phase 2 — HSS** ✅ (PostgreSQL + Flyway + gRPC Cx, H(A1)-only credentials)
 - **Phase 3 — I-CSCF** ✅ (home-network entry proxy, HSS Cx client UAR/LIR, S-CSCF selection)
 - **Phase 4 — S-CSCF** ✅ (registrar, SIP Digest auth, Cx MAR/SAR, session control)
+- **Logging** ✅ (ECS JSON logs with `service.name` / `sip.call_id`, Fluent Bit → Kafka → Logstash → Elasticsearch, Kibana dashboard; see [deploy/logging](deploy/logging/README.md))
 - **Phase 5 — RTPEngine** · **Phase 6 — CDF-billing** · **Phase 7 — E2E + stress (SIPp)**
 
 Known shortcuts and deferred work are tracked in [docs/TECH_DEBT.md](docs/TECH_DEBT.md).

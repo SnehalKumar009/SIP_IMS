@@ -24,6 +24,16 @@
     },
     "mappings": {
       "properties": {
+        "log": {
+          "properties": {
+            "level": {
+              "type": "keyword"
+            },
+            "logger": {
+              "type": "keyword"
+            }
+          }
+        },
         "service": {
           "properties": {
             "name": {

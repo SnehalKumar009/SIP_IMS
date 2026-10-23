@@ -77,8 +77,19 @@ spec:
             }
           }
 
+          # ECS reserves `log` for an object (log.level, log.logger). Fluent Bit already
+          # moves raw text to `message`; this catches anything produced before that or by
+          # another shipper, so a string `log` can never be indexed.
+          if [log] and ![message] {
+            mutate {
+              rename => { "[log]" => "message" }
+            }
+          }
+
+          # @version is Logstash bookkeeping; event.original is the json codec's copy of
+          # the whole raw record, which would double the stored size of every document.
           mutate {
-            remove_field => ["@version"]
+            remove_field => ["@version", "[event][original]"]
           }
         }
 
