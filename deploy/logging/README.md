@@ -77,6 +77,26 @@ The pipeline (inline in the resource) does three things:
 dots, and expanding them into objects breaks the mapping as soon as one pod also has a plain `app`
 label.
 
+## Kibana content (`kibana/`)
+
+`ims-logs.ndjson` holds every IMS Kibana object; `import.sh` loads it, `export.sh` writes it back.
+
+| Object | ID | What it shows |
+|--------|----|---------------|
+| Data view **IMS logs** | `ims-logs` | `logs-ims-*`, time field `@timestamp` |
+| Dashboard **IMS — Logs overview** | `ims-dashboard-overview` | Log volume per service, warnings/errors per service, the problem lines and the SIP signaling trail; last hour, refreshing every 30s |
+| Search **IMS — All logs** | `ims-search-all` | Everything, with `service.name`, `log.level`, `sip.call_id`, `message` |
+| Searches **IMS — P-CSCF / I-CSCF / S-CSCF / HSS** | `ims-search-<service>` | One service at a time |
+| Search **IMS — Warnings and errors** | `ims-search-problems` | `log.level : ("WARN" or "ERROR")` |
+| Search **IMS — SIP signaling** | `ims-search-signaling` | Every `TRACE IN`/`TRACE OUT` line |
+
+To follow one call, open **IMS — SIP signaling** and add the filter `sip.call_id : "<Call-ID>"`:
+P-CSCF, I-CSCF and S-CSCF hops then line up in time order.
+
+Workflow for changes: edit in the Kibana UI, run `export.sh`, commit `ims-logs.ndjson`. On a new
+cluster, `import.sh` recreates everything. The exported objects carry their Kibana migration
+version; hand-written objects without one are treated as the oldest format and can fail import.
+
 ## Deploy
 
 ```bash
@@ -86,6 +106,7 @@ microk8s kubectl apply -k deploy/logging
 microk8s kubectl -n logging rollout status ds/fluent-bit
 microk8s kubectl -n logging wait elasticsearch/ims-es --for=jsonpath='{.status.health}'=green --timeout=600s
 ./deploy/logging/elastic/index-setup/apply.sh            # once, and after editing the JSON files
+./deploy/logging/kibana/import.sh                        # once Kibana is green, and after pulling changes
 ```
 
 ## Open Kibana
