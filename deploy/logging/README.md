@@ -88,10 +88,39 @@ label.
 | Search **IMS — All logs** | `ims-search-all` | Everything, with `service.name`, `log.level`, `sip.call_id`, `message` |
 | Searches **IMS — P-CSCF / I-CSCF / S-CSCF / HSS** | `ims-search-<service>` | One service at a time |
 | Search **IMS — Warnings and errors** | `ims-search-problems` | `log.level : ("WARN" or "ERROR")` |
-| Search **IMS — SIP signaling** | `ims-search-signaling` | Every `TRACE IN`/`TRACE OUT` line |
+| Search **IMS — SIP signaling** | `ims-search-signaling` | Wire events only (`event.action : sip-in/sip-out`), oldest first: one row per SIP message with direction, source, destination and `sip.summary` |
+| Search **IMS — Call debug** | `ims-search-call-debug` | Every line, oldest first: the wire events plus each service's DEBUG processing steps |
 
 To follow one call, open **IMS — SIP signaling** and add the filter `sip.call_id : "<Call-ID>"`:
-P-CSCF, I-CSCF and S-CSCF hops then line up in time order.
+every hop (P-CSCF → I-CSCF → S-CSCF → P-CSCF → UE and the responses back) reads top to bottom
+like a ladder. To see *why* a hop did what it did, open **IMS — Call debug** with the same
+filter. Expand a row (⤢) to read the full SIP message in `sip.message`, or set the table's row
+height to *Auto* to see it inline. For a ladder diagram, use Homer: it receives the same messages
+over HEP.
+
+## SIP wire events
+
+Every SIP message that enters or leaves a CSCF produces one log event, written by
+`SipTrace` (`platform/shared-telecom-lib`) to the logger `ims.sip.wire` at INFO, at the same
+point where the message is mirrored to Homer. Processing steps stay as DEBUG lines under each
+class's own logger.
+
+| Field | Example |
+|-------|---------|
+| `event.action` | `sip-in` / `sip-out` |
+| `sip.direction` | `in` / `out` |
+| `sip.summary` | `INVITE sip:bob@ims.snehal.com`, `200 OK (INVITE)` |
+| `sip.method`, `sip.call_id`, `sip.cseq` | `INVITE`, `1-284661@10.255.0.10`, `1 INVITE` |
+| `sip.request_uri` / `sip.status_code` | requests / responses |
+| `source.address`, `source.port` | the packet's real source for inbound messages (from the SIP stack) |
+| `destination.address`, `destination.port` | the next hop as the service addressed it (a pod IP or DNS name) |
+| `sip.message` | the full message, LF line endings |
+| `message` | one readable line: `IN  INVITE sip:bob@…  10.255.0.10:5060 -> 10.1.12.209:5060` |
+
+Addresses use ECS `*.address` (keyword) rather than `*.ip`, because a destination can be a DNS
+name. `@timestamp` is mapped as `date_nanos`: hops within the same millisecond would otherwise
+sort in arbitrary order. A source of `10.152.183.x` is a Service ClusterIP: a reply to a request
+that was sent to a Service comes back through kube-proxy's NAT with the Service as its source.
 
 Workflow for changes: edit in the Kibana UI, run `export.sh`, commit `ims-logs.ndjson`. On a new
 cluster, `import.sh` recreates everything. The exported objects carry their Kibana migration

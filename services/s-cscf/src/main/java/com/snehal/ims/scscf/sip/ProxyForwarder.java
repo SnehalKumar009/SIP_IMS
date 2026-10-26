@@ -5,6 +5,7 @@ import com.snehal.ims.scscf.ScscfProperties;
 import com.snehal.ims.telecom.hep.HepCaptureService;
 import com.snehal.ims.telecom.metrics.SipMetrics;
 import com.snehal.ims.telecom.sip.SipStackManager;
+import com.snehal.ims.telecom.sip.SipTrace;
 import java.util.Iterator;
 import java.util.List;
 import javax.sip.ClientTransaction;
@@ -39,7 +40,7 @@ public class ProxyForwarder {
     private static final Logger log = LoggerFactory.getLogger(ProxyForwarder.class);
 
     private final SipStackManager stack;
-    private final HepCaptureService hep;
+    private final SipTrace trace;
     private final SipMetrics sipMetrics;
     private final ScscfMetrics scscfMetrics;
     private final ScscfProperties props;
@@ -48,12 +49,12 @@ public class ProxyForwarder {
     // listener during its own @PostConstruct and the factories are only needed at
     // request time.
     public ProxyForwarder(@Lazy SipStackManager stack,
-                          HepCaptureService hep,
+                          SipTrace trace,
                           SipMetrics sipMetrics,
                           ScscfMetrics scscfMetrics,
                           ScscfProperties props) {
         this.stack = stack;
-        this.hep = hep;
+        this.trace = trace;
         this.sipMetrics = sipMetrics;
         this.scscfMetrics = scscfMetrics;
         this.props = props;
@@ -209,10 +210,7 @@ public class ProxyForwarder {
         captureOutbound(out, callId);
         clientTx.sendRequest();
         sipMetrics.recordSent(method);
-        NextHop hop = nextHopOf(out);
-        log.debug("TRACE OUT -> {} callId={} dst={}:{} branch={}",
-                method, callId, hop.host(), hop.port(), clientTx.getBranchId());
-        log.debug("TRACE OUT -> full message:\n{}", out);
+        log.debug("TRACE     · sent on client transaction branch={}", clientTx.getBranchId());
         return clientTx;
     }
 
@@ -221,8 +219,6 @@ public class ProxyForwarder {
         captureOutbound(out, callId);
         provider.sendRequest(out);
         sipMetrics.recordSent(method);
-        NextHop hop = nextHopOf(out);
-        log.debug("TRACE OUT -> {} callId={} dst={}:{} (stateless)", method, callId, hop.host(), hop.port());
     }
 
     public Response respond(ServerTransaction serverTx, Request request, int status,
@@ -240,10 +236,6 @@ public class ProxyForwarder {
         }
         captureOutboundResponse(request, response);
         sipMetrics.recordSent(String.valueOf(status));
-        log.debug("TRACE OUT -> {} {} callId={} dst={}:{}",
-                status, response.getReasonPhrase(), SipMessages.callId(response),
-                SipMessages.topViaHost(request), SipMessages.topViaPort(request));
-        log.debug("TRACE OUT -> full message:\n{}", response);
         return response;
     }
 
@@ -260,14 +252,14 @@ public class ProxyForwarder {
     public void captureInbound(Message message, String callId) {
         capture(HepCaptureService.Direction.INBOUND,
                 SipMessages.topViaHost(message), SipMessages.topViaPort(message),
-                props.getSelfHost(), props.getSelfPort(), callId, message.toString());
+                props.getSelfHost(), props.getSelfPort(), message);
     }
 
     public void captureOutbound(Request request, String callId) {
         NextHop hop = nextHopOf(request);
         capture(HepCaptureService.Direction.OUTBOUND,
                 props.getSelfHost(), props.getSelfPort(), hop.host(), hop.port(),
-                callId, request.toString());
+                request);
     }
 
     /** Responses travel back down the Via chain, so the destination is the next Via. */
@@ -275,13 +267,12 @@ public class ProxyForwarder {
         capture(HepCaptureService.Direction.OUTBOUND,
                 props.getSelfHost(), props.getSelfPort(),
                 SipMessages.topViaHost(original), SipMessages.topViaPort(original),
-                SipMessages.callId(response), response.toString());
+                response);
     }
 
     public void capture(HepCaptureService.Direction direction, String srcHost, int srcPort,
-                        String dstHost, int dstPort, String correlationId, String payload) {
-        hep.capture(direction, isUdp(), SipMessages.resolve(srcHost), srcPort,
-                SipMessages.resolve(dstHost), dstPort, correlationId, payload);
+                        String dstHost, int dstPort, Message message) {
+        trace.record(direction, isUdp(), srcHost, srcPort, dstHost, dstPort, message);
     }
 
     /** Where the request will actually go: the top Route if present, else the Request-URI. */

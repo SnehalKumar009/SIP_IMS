@@ -7,9 +7,8 @@ import com.snehal.ims.icscf.ScscfSelector.ScscfTarget;
 import com.snehal.ims.telecom.hep.HepCaptureService;
 import com.snehal.ims.telecom.metrics.SipMetrics;
 import com.snehal.ims.telecom.sip.SipStackManager;
+import com.snehal.ims.telecom.sip.SipTrace;
 import io.micrometer.core.instrument.Timer;
-import java.net.InetAddress;
-import java.net.UnknownHostException;
 import javax.sip.ClientTransaction;
 import javax.sip.DialogTerminatedEvent;
 import javax.sip.IOExceptionEvent;
@@ -66,7 +65,7 @@ public class IcscfSipListener implements SipListener {
     private static final int DIAMETER_ERROR_IDENTITY_NOT_REGISTERED = 5003;
 
     private final SipStackManager stack;
-    private final HepCaptureService hep;
+    private final SipTrace trace;
     private final SipMetrics metrics;
     private final CxClient cx;
     private final ScscfSelector selector;
@@ -76,13 +75,13 @@ public class IcscfSipListener implements SipListener {
     // this listener during its own @PostConstruct, and the listener only needs the manager's
     // factories at request time, so a lazy proxy is sufficient here.
     public IcscfSipListener(@Lazy SipStackManager stack,
-                            HepCaptureService hep,
+                            SipTrace trace,
                             SipMetrics metrics,
                             CxClient cx,
                             ScscfSelector selector,
                             IcscfProperties props) {
         this.stack = stack;
-        this.hep = hep;
+        this.trace = trace;
         this.metrics = metrics;
         this.cx = cx;
         this.selector = selector;
@@ -102,11 +101,8 @@ public class IcscfSipListener implements SipListener {
         Timer.Sample sample = metrics.startTimer();
         try {
             SipProvider provider = (SipProvider) event.getSource();
-            log.debug("TRACE IN  <- {} callId={} src={}:{} ruri={}",
-                    method, callId, topViaHost(request), portOf(request), request.getRequestURI());
-            log.debug("TRACE IN  <- full message:\n{}", request);
             capture(HepCaptureService.Direction.INBOUND, topViaHost(request), portOf(request),
-                    props.getSelfHost(), props.getSelfPort(), callId, request.toString());
+                    props.getSelfHost(), props.getSelfPort(), request);
 
             // ACK is end-to-end within an established dialog: forward statelessly.
             if (Request.ACK.equals(method)) {
@@ -224,12 +220,10 @@ public class IcscfSipListener implements SipListener {
         clientTx.setApplicationData(new TxContext(serverTx, target));
 
         capture(HepCaptureService.Direction.OUTBOUND, props.getSelfHost(), props.getSelfPort(),
-                target.host(), target.port(), callId, out.toString());
+                target.host(), target.port(), out);
         clientTx.sendRequest();
         metrics.recordSent(method);
-        log.debug("TRACE OUT -> {} callId={} dst={}:{} branch={}",
-                method, callId, target.host(), target.port(), clientTx.getBranchId());
-        log.debug("TRACE OUT -> full message:\n{}", out);
+        log.debug("TRACE     · sent on client transaction branch={}", clientTx.getBranchId());
     }
 
     private void forwardAck(SipProvider provider, Request request) throws Exception {
@@ -290,14 +284,11 @@ public class IcscfSipListener implements SipListener {
             TxContext ctx = clientTx != null ? (TxContext) clientTx.getApplicationData() : null;
             ScscfTarget upstream = ctx != null ? ctx.upstream() : null;
 
-            log.debug("TRACE IN  <- {} {} callId={} from S-CSCF {}",
-                    status, response.getReasonPhrase(), callId,
-                    upstream != null ? upstream.host() + ":" + upstream.port() : "unknown");
-            log.debug("TRACE IN  <- full message:\n{}", response);
+            // The source is a fallback only: SipTrace uses the packet's real source.
             capture(HepCaptureService.Direction.INBOUND,
                     upstream != null ? upstream.host() : "0.0.0.0",
                     upstream != null ? upstream.port() : 5060,
-                    props.getSelfHost(), props.getSelfPort(), callId, response.toString());
+                    props.getSelfHost(), props.getSelfPort(), response);
 
             // Strip the I-CSCF's own Via; the next Via belongs to the downstream P-CSCF/UE.
             response.removeFirst(ViaHeader.NAME);
@@ -310,16 +301,15 @@ public class IcscfSipListener implements SipListener {
                     topViaHost(response), portOf(response));
 
             capture(HepCaptureService.Direction.OUTBOUND, props.getSelfHost(), props.getSelfPort(),
-                    topViaHost(response), portOf(response), callId, response.toString());
+                    topViaHost(response), portOf(response), response);
 
             ServerTransaction serverTx = ctx != null ? ctx.serverTx() : null;
             if (serverTx != null) {
                 serverTx.sendResponse(response);
-                log.debug("TRACE OUT -> {} callId={} via server tx branch={}",
-                        status, callId, serverTx.getBranchId());
+                log.debug("TRACE     · relayed on server transaction branch={}", serverTx.getBranchId());
             } else {
                 ((SipProvider) event.getSource()).sendResponse(response);
-                log.debug("TRACE OUT -> {} callId={} statelessly (no server tx)", status, callId);
+                log.debug("TRACE     · relayed statelessly (no server transaction)");
             }
             metrics.recordSent(String.valueOf(status));
         } catch (Exception e) {
@@ -373,7 +363,7 @@ public class IcscfSipListener implements SipListener {
         Response response = mf.createResponse(status, request);
         serverTx.sendResponse(response);
         capture(HepCaptureService.Direction.OUTBOUND, props.getSelfHost(), props.getSelfPort(),
-                topViaHost(request), portOf(request), callId(request), response.toString());
+                topViaHost(request), portOf(request), response);
         metrics.recordSent(String.valueOf(status));
     }
 
@@ -418,9 +408,8 @@ public class IcscfSipListener implements SipListener {
     }
 
     private void capture(HepCaptureService.Direction direction, String srcHost, int srcPort,
-                         String dstHost, int dstPort, String correlationId, String payload) {
-        hep.capture(direction, isUdp(), resolve(srcHost), srcPort, resolve(dstHost), dstPort,
-                correlationId, payload);
+                         String dstHost, int dstPort, javax.sip.message.Message message) {
+        trace.record(direction, isUdp(), srcHost, srcPort, dstHost, dstPort, message);
     }
 
     private boolean isUdp() {
@@ -459,14 +448,6 @@ public class IcscfSipListener implements SipListener {
             return rport;
         }
         return via.getPort() > 0 ? via.getPort() : 5060;
-    }
-
-    private static InetAddress resolve(String host) {
-        try {
-            return InetAddress.getByName(host);
-        } catch (UnknownHostException e) {
-            return InetAddress.getLoopbackAddress();
-        }
     }
 
     /** Per-client-transaction context: the originating server tx and the chosen S-CSCF. */

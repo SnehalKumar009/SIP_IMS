@@ -25,7 +25,8 @@ OBJECTS='[
   {"type": "search",    "id": "ims-search-p-cscf"},
   {"type": "search",    "id": "ims-search-i-cscf"},
   {"type": "search",    "id": "ims-search-s-cscf"},
-  {"type": "search",    "id": "ims-search-hss"}
+  {"type": "search",    "id": "ims-search-hss"},
+  {"type": "search",    "id": "ims-search-call-debug"}
 ]'
 
 echo ">> Exporting from ${POD}..."

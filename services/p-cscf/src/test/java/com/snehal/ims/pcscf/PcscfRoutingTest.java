@@ -4,9 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import com.snehal.ims.telecom.hep.HepCaptureService;
 import com.snehal.ims.telecom.metrics.SipMetrics;
 import com.snehal.ims.telecom.sip.SipStackManager;
+import com.snehal.ims.telecom.sip.SipTrace;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.List;
 import javax.sip.SipFactory;
@@ -159,7 +159,7 @@ class PcscfRoutingTest {
         when(stack.getAddressFactory()).thenReturn(af);
         when(stack.getHeaderFactory()).thenReturn(hf);
 
-        return new PcscfSipListener(stack, mock(HepCaptureService.class),
+        return new PcscfSipListener(stack, mock(SipTrace.class),
                 new SipMetrics(new SimpleMeterRegistry()), new SipRateLimiter(props), props);
     }
 

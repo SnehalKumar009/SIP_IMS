@@ -80,10 +80,6 @@ public class ScscfSipListener implements SipListener {
         Timer.Sample sample = metrics.startTimer();
         try {
             SipProvider provider = (SipProvider) event.getSource();
-            log.debug("TRACE IN  <- {} callId={} src={}:{} ruri={}",
-                    method, callId, SipMessages.topViaHost(request),
-                    SipMessages.topViaPort(request), request.getRequestURI());
-            log.debug("TRACE IN  <- full message:\n{}", request);
             proxy.captureInbound(request, callId);
 
             // ACK is end-to-end within an established dialog: forward statelessly.
@@ -180,9 +176,6 @@ public class ScscfSipListener implements SipListener {
         String callId = SipMessages.callId(response);
         MDC.put("callId", callId);
         try {
-            log.debug("TRACE IN  <- {} {} callId={} cseqMethod={}",
-                    status, response.getReasonPhrase(), callId, cseqMethod(response));
-            log.debug("TRACE IN  <- full message:\n{}", response);
             proxy.captureInbound(response, callId);
 
             if (isFinal(status) && Request.INVITE.equals(cseqMethod(response))) {
@@ -209,11 +202,10 @@ public class ScscfSipListener implements SipListener {
                     clientTx != null ? (ServerTransaction) clientTx.getApplicationData() : null;
             if (serverTx != null) {
                 serverTx.sendResponse(response);
-                log.debug("TRACE OUT -> {} callId={} via server tx branch={}",
-                        status, callId, serverTx.getBranchId());
+                log.debug("TRACE     · relayed on server transaction branch={}", serverTx.getBranchId());
             } else {
                 ((SipProvider) event.getSource()).sendResponse(response);
-                log.debug("TRACE OUT -> {} callId={} statelessly (no server tx)", status, callId);
+                log.debug("TRACE     · relayed statelessly (no server transaction)");
             }
             metrics.recordSent(String.valueOf(status));
         } catch (Exception e) {

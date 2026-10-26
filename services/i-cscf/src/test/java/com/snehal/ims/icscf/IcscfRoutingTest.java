@@ -3,9 +3,9 @@ package com.snehal.ims.icscf;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 
-import com.snehal.ims.telecom.hep.HepCaptureService;
 import com.snehal.ims.telecom.metrics.SipMetrics;
 import com.snehal.ims.telecom.sip.SipStackManager;
+import com.snehal.ims.telecom.sip.SipTrace;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.List;
 import javax.sip.SipFactory;
@@ -100,7 +100,7 @@ class IcscfRoutingTest {
         props.setSelfHost(SELF_HOST);
         props.setSelfPort(5060);
         props.setAliases(List.of(SERVICE));
-        return new IcscfSipListener(mock(SipStackManager.class), mock(HepCaptureService.class),
+        return new IcscfSipListener(mock(SipStackManager.class), mock(SipTrace.class),
                 new SipMetrics(new SimpleMeterRegistry()), mock(CxClient.class),
                 new ScscfSelector(props), props);
     }

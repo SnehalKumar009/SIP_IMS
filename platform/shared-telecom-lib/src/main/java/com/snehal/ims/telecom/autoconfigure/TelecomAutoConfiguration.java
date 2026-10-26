@@ -7,6 +7,7 @@ import com.snehal.ims.telecom.hep.HepV3Sender;
 import com.snehal.ims.telecom.metrics.SipMetrics;
 import com.snehal.ims.telecom.sip.SipStackManager;
 import com.snehal.ims.telecom.sip.SipStackProperties;
+import com.snehal.ims.telecom.sip.SipTrace;
 import io.micrometer.core.instrument.MeterRegistry;
 import javax.sip.SipListener;
 import org.springframework.beans.factory.ObjectProvider;
@@ -48,6 +49,13 @@ public class TelecomAutoConfiguration {
                                                HepCaptureProperties properties,
                                                MeterRegistry meterRegistry) {
         return new HepCaptureService(encoder, sender, properties, meterRegistry);
+    }
+
+    /** One HEP capture plus one structured wire log event per SIP message. */
+    @Bean
+    @ConditionalOnMissingBean
+    public SipTrace sipTrace(HepCaptureService hepCaptureService) {
+        return new SipTrace(hepCaptureService);
     }
 
     // ---- Shared SIP metrics ----

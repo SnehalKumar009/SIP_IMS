@@ -24,6 +24,9 @@
     },
     "mappings": {
       "properties": {
+        "@timestamp": {
+          "type": "date_nanos"
+        },
         "log": {
           "properties": {
             "level": {
@@ -58,6 +61,26 @@
             },
             "method": {
               "type": "keyword"
+            },
+            "direction": {
+              "type": "keyword"
+            },
+            "summary": {
+              "type": "keyword",
+              "ignore_above": 1024
+            },
+            "cseq": {
+              "type": "keyword"
+            },
+            "request_uri": {
+              "type": "keyword",
+              "ignore_above": 1024
+            },
+            "status_code": {
+              "type": "short"
+            },
+            "message": {
+              "type": "match_only_text"
             }
           }
         },
@@ -65,6 +88,33 @@
           "properties": {
             "labels": {
               "type": "flattened"
+            }
+          }
+        },
+        "event": {
+          "properties": {
+            "action": {
+              "type": "keyword"
+            }
+          }
+        },
+        "source": {
+          "properties": {
+            "address": {
+              "type": "keyword"
+            },
+            "port": {
+              "type": "integer"
+            }
+          }
+        },
+        "destination": {
+          "properties": {
+            "address": {
+              "type": "keyword"
+            },
+            "port": {
+              "type": "integer"
             }
           }
         }

@@ -167,7 +167,7 @@ public class RegistrarHandler {
         WWWAuthenticateHeader header = authenticator.challenge(
                 vector.getRealm(), impi, clientIp, vector.getAuthorization(), stale);
         metrics.recordChallenge();
-        log.debug("TRACE OUT -> 401 Unauthorized  realm={} nonce={} algorithm={} stale={}",
+        log.debug("TRACE REG · challenging with 401: realm={} nonce={} algorithm={} stale={}",
                 header.getRealm(), header.getNonce(), header.getAlgorithm(), stale);
         proxy.respond(serverTx, request, Response.UNAUTHORIZED, header);
     }
@@ -327,7 +327,7 @@ public class RegistrarHandler {
         headers.add(hf.createHeader(SipMessages.SERVICE_ROUTE, "<" + proxy.ownUri() + ">"));
         headers.add(hf.createHeader(SipMessages.P_ASSOCIATED_URI, "<" + impu + ">"));
 
-        log.debug("TRACE OUT -> 200 OK impu={} expires={} headers={} serviceRoute={}",
+        log.debug("TRACE REG · accepting with 200 OK: impu={} expires={} headers={} serviceRoute={}",
                 impu, granted, headers.size(), proxy.ownUri());
         proxy.respond(serverTx, request, Response.OK, headers.toArray(new Header[0]));
     }
