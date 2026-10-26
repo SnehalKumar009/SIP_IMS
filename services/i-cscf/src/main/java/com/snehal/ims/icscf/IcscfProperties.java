@@ -1,6 +1,8 @@
 package com.snehal.ims.icscf;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
@@ -19,6 +21,14 @@ public class IcscfProperties {
 
     /** Port this I-CSCF advertises (normally equal to {@code ims.sip.port}). */
     private int selfPort = 5060;
+
+    /**
+     * Other host names peers use to address this I-CSCF, typically its Service DNS name
+     * (the P-CSCF routes to the Service, not to a pod IP). A top Route naming
+     * {@link #selfHost} or any alias on {@link #selfPort} is ours and is removed before
+     * forwarding (RFC 3261 §16.4).
+     */
+    private List<String> aliases = new ArrayList<>(List.of("i-cscf.ims-core.svc.cluster.local"));
 
     /** Home network domain / realm this I-CSCF serves. */
     private String homeDomain = "ims.snehal.com";
@@ -57,6 +67,8 @@ public class IcscfProperties {
     public void setSelfHost(String selfHost) { this.selfHost = selfHost; }
     public int getSelfPort() { return selfPort; }
     public void setSelfPort(int selfPort) { this.selfPort = selfPort; }
+    public List<String> getAliases() { return aliases; }
+    public void setAliases(List<String> aliases) { this.aliases = aliases; }
     public String getHomeDomain() { return homeDomain; }
     public void setHomeDomain(String homeDomain) { this.homeDomain = homeDomain; }
     public String getVisitedNetwork() { return visitedNetwork; }

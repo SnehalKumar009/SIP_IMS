@@ -19,6 +19,7 @@ import javax.sip.TransactionTerminatedEvent;
 import javax.sip.address.Address;
 import javax.sip.address.AddressFactory;
 import javax.sip.address.SipURI;
+import javax.sip.address.URI;
 import javax.sip.header.CallIdHeader;
 import javax.sip.header.HeaderFactory;
 import javax.sip.header.MaxForwardsHeader;
@@ -40,8 +41,22 @@ import org.springframework.stereotype.Component;
  *
  * <p>For every request it rate-limits by source, mirrors the message to Homer,
  * inserts the P-CSCF into the signaling path (Via + Record-Route, plus Path on
- * REGISTER), decrements Max-Forwards, and forwards to the upstream I-CSCF. Responses
- * are matched back to the originating server transaction and relayed downstream.</p>
+ * REGISTER), decrements Max-Forwards, and forwards it on. Responses are matched back
+ * to the originating server transaction and relayed downstream.</p>
+ *
+ * <p><b>Routing (RFC 3261 §16.4–16.6).</b> Where a request goes depends on its Route
+ * set, not on a fixed upstream:</p>
+ * <ul>
+ *   <li>Our own topmost Route is removed first — leaving it in place would make the
+ *       request spiral back through us on every hop.</li>
+ *   <li>If a Route set survives that, the request is loose-routed to it. This is an
+ *       in-dialog request from the UE whose route set still names the S-CSCF.</li>
+ *   <li>If we were the <em>last</em> Route, the request arrived from the network over
+ *       the Path we inserted at registration. The S-CSCF has already retargeted the
+ *       Request-URI onto the UE's contact, so that is the destination — the UE.</li>
+ *   <li>With no Route set at all the request is entering the network from the access
+ *       side, and only then is the upstream I-CSCF Route inserted.</li>
+ * </ul>
  */
 @Component
 public class PcscfSipListener implements SipListener {
@@ -140,10 +155,10 @@ public class PcscfSipListener implements SipListener {
             log.debug("TRACE     · Max-Forwards decremented to {}", mf.getMaxForwards());
         }
 
+        // RFC 3261 §16.4: strip our own Route before deciding where this goes.
+        NextHop hop = resolveNextHop(out);
+
         // Insert the P-CSCF into the signaling path.
-        RouteHeader nextHop = nextHopRoute();
-        out.addFirst(nextHop);                                      // outbound Route -> I-CSCF
-        log.debug("TRACE     · added Route -> {}", nextHop.getAddress().getURI());
         if (Request.REGISTER.equals(method)) {
             String path = "<sip:" + props.getSelfHost() + ":" + props.getSelfPort() + ";lr>";
             out.addFirst(hf.createHeader("Path", path));
@@ -163,25 +178,96 @@ public class PcscfSipListener implements SipListener {
         clientTx.setApplicationData(serverTx);
 
         capture(HepCaptureService.Direction.OUTBOUND, props.getSelfHost(), props.getSelfPort(),
-                props.getNextHop().getHost(), props.getNextHop().getPort(), callId, out.toString());
+                hop.host(), hop.port(), callId, out.toString());
         clientTx.sendRequest();
         metrics.recordSent(method);
         log.debug("TRACE OUT -> {} callId={} dst={}:{} branch={}",
-                method, callId, props.getNextHop().getHost(), props.getNextHop().getPort(),
-                clientTx.getBranchId());
+                method, callId, hop.host(), hop.port(), clientTx.getBranchId());
         log.debug("TRACE OUT -> full message:\n{}", out);
     }
 
     private void forwardAck(SipProvider provider, Request request) throws Exception {
         HeaderFactory hf = stack.getHeaderFactory();
         Request out = (Request) request.clone();
+        // An ACK carries the dialog's route set, so it gets the same §16.4 treatment
+        // as any other request — it must not be blindly pushed at the I-CSCF.
+        NextHop hop = resolveNextHop(out);
         ViaHeader via = hf.createViaHeader(props.getSelfHost(), props.getSelfPort(), transport(), null);
         out.addFirst(via);
-        out.addFirst(nextHopRoute());
         provider.sendRequest(out);
         metrics.recordSent(Request.ACK);
-        log.debug("TRACE OUT -> ACK callId={} dst={}:{}", callId(request),
-                props.getNextHop().getHost(), props.getNextHop().getPort());
+        capture(HepCaptureService.Direction.OUTBOUND, props.getSelfHost(), props.getSelfPort(),
+                hop.host(), hop.port(), callId(request), out.toString());
+        log.debug("TRACE OUT -> ACK callId={} dst={}:{}", callId(request), hop.host(), hop.port());
+    }
+
+    // ------------------------------------------------------------------- routing
+
+    /**
+     * Applies RFC 3261 §16.4 route preprocessing and returns where the request is
+     * actually going. Mutates {@code out}: our own Route is popped, and the upstream
+     * I-CSCF Route is inserted only when no route set remains.
+     */
+    // Package-private so the routing decision can be unit-tested directly.
+    NextHop resolveNextHop(Request out) throws Exception {
+        boolean wasRoutedToUs = popOwnRoute(out);
+        RouteHeader remaining = (RouteHeader) out.getHeader(RouteHeader.NAME);
+
+        if (remaining != null) {
+            // A route set survives: loose-route to it rather than back upstream.
+            NextHop hop = hopOf(remaining.getAddress().getURI());
+            log.debug("TRACE     · route set remains, loose-routing to {}:{}", hop.host(), hop.port());
+            return hop;
+        }
+        if (wasRoutedToUs) {
+            // We were the last Route: this came in from the network over the Path we
+            // inserted at registration, and the Request-URI is already the UE contact.
+            NextHop hop = hopOf(out.getRequestURI());
+            log.debug("TRACE     · we were the last Route — terminating leg, sending to Request-URI {}:{}",
+                    hop.host(), hop.port());
+            return hop;
+        }
+        // No route set: originating request entering the network.
+        RouteHeader toIcscf = nextHopRoute();
+        out.addFirst(toIcscf);
+        log.debug("TRACE     · no route set — originating leg, added Route -> {}",
+                toIcscf.getAddress().getURI());
+        return new NextHop(props.getNextHop().getHost(), props.getNextHop().getPort());
+    }
+
+    /**
+     * RFC 3261 §16.4: a proxy removes its own value from the top of the Route set.
+     *
+     * @return {@code true} when the popped Route was ours
+     */
+    private boolean popOwnRoute(Request request) {
+        RouteHeader top = (RouteHeader) request.getHeader(RouteHeader.NAME);
+        if (top == null || !isOwnUri(top.getAddress().getURI())) {
+            return false;
+        }
+        request.removeFirst(RouteHeader.NAME);
+        log.debug("TRACE     · popped our own top Route {}", top.getAddress().getURI());
+        return true;
+    }
+
+    /** {@code true} when the URI addresses this P-CSCF's own host and port. */
+    private boolean isOwnUri(URI uri) {
+        if (!(uri instanceof SipURI sipUri) || sipUri.getHost() == null) {
+            return false;
+        }
+        int port = sipUri.getPort() > 0 ? sipUri.getPort() : 5060;
+        return sipUri.getHost().equalsIgnoreCase(props.getSelfHost()) && port == props.getSelfPort();
+    }
+
+    private static NextHop hopOf(URI uri) {
+        if (uri instanceof SipURI sipUri && sipUri.getHost() != null) {
+            return new NextHop(sipUri.getHost(), sipUri.getPort() > 0 ? sipUri.getPort() : 5060);
+        }
+        return new NextHop("0.0.0.0", 5060);
+    }
+
+    /** Where a request will actually be sent. */
+    record NextHop(String host, int port) {
     }
 
     // ----------------------------------------------------------------- responses

@@ -192,6 +192,11 @@ public class IcscfSipListener implements SipListener {
         HeaderFactory hf = stack.getHeaderFactory();
         Request out = (Request) request.clone();
 
+        // RFC 3261 §16.4: the Route that brought the request here (the P-CSCF addresses
+        // the I-CSCF Service) must go, or it stays in the route set below the S-CSCF
+        // Route and the S-CSCF follows it straight back to us.
+        popOwnRoute(out);
+
         MaxForwardsHeader mf = (MaxForwardsHeader) out.getHeader(MaxForwardsHeader.NAME);
         if (mf == null) {
             out.setHeader(hf.createMaxForwardsHeader(70));
@@ -230,10 +235,46 @@ public class IcscfSipListener implements SipListener {
     private void forwardAck(SipProvider provider, Request request) throws Exception {
         HeaderFactory hf = stack.getHeaderFactory();
         Request out = (Request) request.clone();
+        // Left in place, our own Route would make the stack send the ACK back to us.
+        popOwnRoute(out);
         ViaHeader via = hf.createViaHeader(props.getSelfHost(), props.getSelfPort(), transport(), null);
         out.addFirst(via);
         provider.sendRequest(out);
         metrics.recordSent(Request.ACK);
+    }
+
+    // ------------------------------------------------------------------- routing
+
+    /**
+     * RFC 3261 §16.4: a proxy removes its own value from the top of the Route set.
+     *
+     * @return {@code true} when the popped Route was ours
+     */
+    // Package-private so the route preprocessing can be unit-tested directly.
+    boolean popOwnRoute(Request request) {
+        RouteHeader top = (RouteHeader) request.getHeader(RouteHeader.NAME);
+        if (top == null || !isOwnUri(top.getAddress().getURI())) {
+            log.debug("TRACE     · top Route is not us: {}",
+                    top == null ? "none" : top.getAddress().getURI());
+            return false;
+        }
+        request.removeFirst(RouteHeader.NAME);
+        log.debug("TRACE     · popped our own top Route {}", top.getAddress().getURI());
+        return true;
+    }
+
+    /** {@code true} when the URI names this I-CSCF: its own host or an alias, on its port. */
+    private boolean isOwnUri(URI uri) {
+        if (!(uri instanceof SipURI sipUri) || sipUri.getHost() == null) {
+            return false;
+        }
+        int port = sipUri.getPort() > 0 ? sipUri.getPort() : 5060;
+        if (port != props.getSelfPort()) {
+            return false;
+        }
+        String host = sipUri.getHost();
+        return host.equalsIgnoreCase(props.getSelfHost())
+                || props.getAliases().stream().anyMatch(host::equalsIgnoreCase);
     }
 
     // ----------------------------------------------------------------- responses

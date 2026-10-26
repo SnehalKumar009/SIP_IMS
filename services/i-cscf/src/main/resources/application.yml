@@ -63,6 +63,10 @@ ims:
   icscf:
     self-host: ${POD_IP:127.0.0.1}
     self-port: 5060
+    # Names peers use to reach this I-CSCF besides self-host: the P-CSCF routes to the
+    # Service DNS name, so a Route naming it is ours and is removed before forwarding.
+    aliases:
+      - i-cscf.ims-core.svc.cluster.local
     home-domain: ims.snehal.com
     visited-network: ims.snehal.com
     scscf:
