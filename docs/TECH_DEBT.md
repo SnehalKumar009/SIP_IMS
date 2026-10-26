@@ -327,3 +327,40 @@ for 24h and can be replayed by resetting the `logstash-ims-logs` consumer group.
 
 **Done when:** a persistent queue (`queue.type: persisted`) on the Logstash PVC, so events are
 on disk before their offsets can be committed.
+
+### TD-036 — ClickHouse is a single node, its only user is admin, and nothing is backed up
+**Status:** OPEN · **Severity:** medium · **Introduced:** Phase 6
+
+`clickhouse-0` holds every charging record and CDR on one hostpath volume. The `cdf` user is
+created with `CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1`, so the CDF runs as an administrator, and
+its password is a literal in `deploy/clickhouse/10-clickhouse.yaml` (like TD-003).
+
+**Mitigation in place:** `ims-charging` keeps 7 days of records; a lost table can be rebuilt by
+resetting the `cdf-billing` consumer group to the earliest offset.
+
+**Done when:** a replicated ClickHouse cluster (Keeper + 2 replicas), a least-privilege
+INSERT/SELECT user for the CDF, the credential in a managed Secret, and scheduled backups.
+
+### TD-037 — A charging record is dropped if Kafka is unreachable for 30 seconds
+**Status:** ACCEPTED · **Severity:** medium · **Introduced:** Phase 6
+
+The S-CSCF publishes asynchronously so a Kafka outage can never fail a call. The producer retries
+for `delivery.timeout.ms` (30 s); after that the record is counted
+(`ims_scscf_charging_events_total{result="failed"}`) and logged at ERROR with its full JSON, but
+not stored anywhere durable. A longer outage loses billing for calls in that window.
+
+**Mitigation in place:** each lost record is in the log stream (Kibana: `Charging record lost`) and
+can be re-published by hand.
+
+**Done when:** a local outbox (e.g. a disk-backed queue or Redis stream) the S-CSCF writes first and
+a relay drains to Kafka, so records survive both a Kafka outage and an S-CSCF restart.
+
+### TD-038 — Session state for charging is per-pod and lost on S-CSCF restart
+**Status:** ACCEPTED · **Severity:** low · **Introduced:** Phase 6
+
+`SessionTracker` holds answered calls in memory. If the S-CSCF restarts mid-call, the BYE finds no
+session and no END record is published: the CDR for that call is never written, although its START
+is in `charging_events`.
+
+**Done when:** session state moves to Redis with the registration store (TD-021, TD-028), or the CDF
+closes START records with no END after a cut-off as `endReason=LOST`.

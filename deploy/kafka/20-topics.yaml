@@ -2,9 +2,8 @@
 #
 # ims-logs: JSON log lines from every IMS pod, produced by Fluent Bit and consumed by
 # Logstash into Elasticsearch. Best-effort by design: short retention, capped size,
-# and Fluent Bit produces with acks=1. The Phase 6 charging topic will be declared
-# here separately with acks=all and long retention — the two streams must not share
-# a topic.
+# and Fluent Bit produces with acks=1. The charging stream below is the opposite:
+# durable, acks=all, long retention — the two must never share a topic.
 apiVersion: kafka.strimzi.io/v1
 kind: KafkaTopic
 metadata:
@@ -22,3 +21,36 @@ spec:
     retention.ms: 86400000          # 24h
     retention.bytes: 1073741824     # 1 GiB per partition, so at most 3 GiB on disk
     segment.bytes: 104857600        # 100 MiB segments, so retention can trim steadily
+---
+# ims-charging: IMS_SESSION_START / IMS_SESSION_END records from the S-CSCF, consumed by
+# cdf-billing into ClickHouse. Keyed by Call-ID, so both records of a call land on the
+# same partition and are read in order. Long retention: Kafka is the replay source if
+# the CDF or ClickHouse loses data. The S-CSCF produces with acks=all + idempotence.
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: ims-charging
+  labels:
+    strimzi.io/cluster: ims-kafka
+spec:
+  partitions: 3
+  replicas: 1
+  config:
+    cleanup.policy: delete
+    retention.ms: 604800000         # 7 days
+    min.insync.replicas: 1          # = replicas on this single broker (TD-029)
+---
+# ims-charging-dlt: records the CDF could not parse (bad JSON, missing fields). Kept
+# for inspection and manual replay instead of blocking the partition or being dropped.
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: ims-charging-dlt
+  labels:
+    strimzi.io/cluster: ims-kafka
+spec:
+  partitions: 1
+  replicas: 1
+  config:
+    cleanup.policy: delete
+    retention.ms: 2592000000        # 30 days

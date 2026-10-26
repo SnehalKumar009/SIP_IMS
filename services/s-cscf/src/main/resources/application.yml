@@ -7,6 +7,23 @@ spring:
       host: redis.ims-core.svc.cluster.local
       port: 6379
       timeout: 500ms
+  # Charging records to the CDF (ims.scscf.charging.mode=kafka).
+  kafka:
+    bootstrap-servers: ims-kafka-kafka-bootstrap.kafka.svc.cluster.local:9092
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      # A billing record must survive a broker failover and not be duplicated by a retry.
+      acks: all
+      properties:
+        enable.idempotence: true
+        # Never hold a SIP thread longer than this when Kafka is unreachable.
+        max.block.ms: 500
+        # Give up (and log the record at ERROR) after 30 s of failed retries. Kafka
+        # requires delivery.timeout.ms >= linger.ms + request.timeout.ms.
+        delivery.timeout.ms: 30000
+        request.timeout.ms: 10000
+        linger.ms: 5
 
 server:
   # Actuator / management HTTP port (scraped by the ims-pods ServiceMonitor).
@@ -78,7 +95,7 @@ ims:
     store: memory
     registration:
       default-expires: 600
-      min-expires: 60
+      min-expires: 600
       max-expires: 3600
       max-bindings-per-aor: 5
       reaper-interval: PT30S
@@ -99,6 +116,12 @@ ims:
       timeout: 750ms
       max-concurrent-calls: 16
       max-wait: 50ms
+    charging:
+      # kafka: records to the ims-charging topic for the CDF; log: structured log only.
+      mode: kafka
+      topic: ims-charging
+      # A call with no BYE after this long is closed with endReason=TIMEOUT.
+      max-session-duration: 12h
 
 # Verbose signaling trace. Drop to INFO once the flows are familiar.
 logging:

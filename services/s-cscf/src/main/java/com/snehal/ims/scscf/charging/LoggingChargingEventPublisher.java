@@ -7,8 +7,8 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 /**
- * Default charging publisher: writes the record to the structured log. Replaced by the
- * Kafka producer in Phase 6.
+ * Default charging publisher: writes the record to the structured log. Active when
+ * {@code ims.scscf.charging.mode=log}; {@link KafkaChargingEventPublisher} is used for {@code kafka}.
  */
 @Component
 @ConditionalOnProperty(prefix = "ims.scscf.charging", name = "mode", havingValue = "log", matchIfMissing = true)
@@ -20,12 +20,14 @@ public class LoggingChargingEventPublisher implements ChargingEventPublisher {
     public void publish(ChargingEvent event) {
         try {
             log.info("charging event",
+                    StructuredArguments.kv("eventId", event.eventId()),
                     StructuredArguments.kv("eventType", event.type()),
                     StructuredArguments.kv("callId", event.callId()),
                     StructuredArguments.kv("from", event.from()),
                     StructuredArguments.kv("to", event.to()),
-                    StructuredArguments.kv("timestamp", event.timestamp().toString()),
-                    StructuredArguments.kv("durationSeconds", event.durationSeconds()));
+                    StructuredArguments.kv("startedAt", String.valueOf(event.startedAt())),
+                    StructuredArguments.kv("durationMs", event.durationMs()),
+                    StructuredArguments.kv("endReason", event.endReason()));
         } catch (Exception e) {
             log.warn("Failed to emit charging event for callId={}", event.callId(), e);
         }

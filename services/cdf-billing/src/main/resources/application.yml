@@ -1,0 +1,68 @@
+spring:
+  application:
+    name: cdf-billing
+  # ClickHouse over HTTP (8123). Credentials come from the clickhouse-credentials Secret.
+  datasource:
+    url: ${CDF_CLICKHOUSE_URL:jdbc:clickhouse://clickhouse.ims-core.svc.cluster.local:8123/ims_billing}
+    username: ${CDF_CLICKHOUSE_USER:cdf}
+    password: ${CDF_CLICKHOUSE_PASSWORD:cdf-change-me}
+    driver-class-name: com.clickhouse.jdbc.Driver
+    hikari:
+      maximum-pool-size: 2
+      # Start even if ClickHouse is not up yet; the listener retries until it is.
+      initialization-fail-timeout: -1
+  kafka:
+    bootstrap-servers: ims-kafka-kafka-bootstrap.kafka.svc.cluster.local:9092
+    consumer:
+      group-id: cdf-billing
+      # A new consumer group starts from the oldest retained record (7 days).
+      auto-offset-reset: earliest
+      # Offsets are committed by the container after each batch is stored, never on a timer.
+      enable-auto-commit: false
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      max-poll-records: 500
+    # Only used to park unparseable records on the dead-letter topic.
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+    listener:
+      type: batch
+      # Commit after the whole batch returned successfully.
+      ack-mode: batch
+
+server:
+  # Actuator / management HTTP port (scraped by the ims-pods ServiceMonitor).
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  metrics:
+    tags:
+      application: cdf-billing
+
+ims:
+  # Stamped into every log line as service.version (Maven resource filtering).
+  service-version: '@project.version@'
+  # The CDF speaks Kafka and JDBC, not SIP: no SIP stack, nothing to mirror to Homer.
+  sip:
+    enabled: false
+  hep:
+    enabled: false
+  cdf:
+    topic: ims-charging
+    dead-letter-topic: ims-charging-dlt
+    retry-initial-interval: 1s
+    retry-max-interval: 30s
+
+logging:
+  level:
+    com.snehal.ims: INFO

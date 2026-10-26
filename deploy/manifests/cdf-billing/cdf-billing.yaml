@@ -1,0 +1,107 @@
+# cdf-billing: Charging Data Function. Consumes IMS_SESSION_START/END records from the
+# Kafka topic ims-charging (consumer group cdf-billing) and stores them, plus one CDR per
+# completed call, in ClickHouse (deploy/clickhouse).
+#
+# One replica: the topic has 3 partitions, so up to 3 replicas can share the work; a
+# 4th would sit idle. Offsets are committed only after ClickHouse accepts a batch.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cdf-billing-config
+  namespace: ims-core
+  labels:
+    app.kubernetes.io/name: cdf-billing
+    app.kubernetes.io/part-of: ims-platform
+data:
+  # Overrides layered on top of the image's packaged application.yml.
+  SPRING_APPLICATION_JSON: |
+    {
+      "spring": {
+        "kafka": { "bootstrap-servers": "ims-kafka-kafka-bootstrap.kafka.svc.cluster.local:9092" }
+      },
+      "ims": {
+        "cdf": { "topic": "ims-charging", "dead-letter-topic": "ims-charging-dlt" }
+      }
+    }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cdf-billing
+  namespace: ims-core
+  labels:
+    app.kubernetes.io/name: cdf-billing
+    app.kubernetes.io/part-of: ims-platform
+spec:
+  selector:
+    app.kubernetes.io/name: cdf-billing
+  ports:
+    # Named "actuator" so the ims-pods ServiceMonitor scrapes /actuator/prometheus.
+    - name: actuator
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cdf-billing
+  namespace: ims-core
+  labels:
+    app.kubernetes.io/name: cdf-billing
+    app.kubernetes.io/part-of: ims-platform
+    plane: charging
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cdf-billing
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: cdf-billing
+        app.kubernetes.io/part-of: ims-platform
+        plane: charging
+    spec:
+      containers:
+        - name: cdf-billing
+          image: localhost:32000/ims/cdf-billing:latest
+          imagePullPolicy: Always
+          envFrom:
+            - configMapRef:
+                name: cdf-billing-config
+          env:
+            - name: CDF_CLICKHOUSE_URL
+              value: jdbc:clickhouse://clickhouse.ims-core.svc.cluster.local:8123/ims_billing
+            - name: CDF_CLICKHOUSE_USER
+              valueFrom:
+                secretKeyRef:
+                  name: clickhouse-credentials
+                  key: username
+            - name: CDF_CLICKHOUSE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: clickhouse-credentials
+                  key: password
+          ports:
+            - containerPort: 8080
+              name: actuator
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: actuator
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: actuator
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi

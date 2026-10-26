@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!-- ==================================================================== -->
+    <!-- cdf-billing :: Charging Data Function                                -->
+    <!-- Consumes IMS_SESSION_START/END records from the ims-charging Kafka   -->
+    <!-- topic and stores them, plus one CDR per completed call, in ClickHouse.-->
+    <!-- ==================================================================== -->
+
+    <parent>
+        <groupId>com.snehal.ims</groupId>
+        <artifactId>ims-platform</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+        <relativePath>../../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>cdf-billing</artifactId>
+    <name>cdf-billing</name>
+    <description>Charging Data Function: Kafka ims-charging consumer writing charging records and CDRs to ClickHouse</description>
+
+    <properties>
+        <!-- clickhouse-jdbc 0.10.0 is built against HttpClient 5.4 / HttpCore 5.3, but Spring
+             Boot 3.3 pins 5.3 / 5.2. The older HttpCore lacks URIBuilder.optimize(), and the
+             resulting NoSuchMethodError kills every connection attempt inside the pool
+             silently. Overridden here only, so the other services keep Boot's versions. -->
+        <httpclient5.version>5.4.4</httpclient5.version>
+        <httpcore5.version>5.3.4</httpcore5.version>
+    </properties>
+
+    <dependencies>
+        <!-- Shared metrics + JSON logging + actuator (SIP stack and HEP disabled here) -->
+        <dependency>
+            <groupId>com.snehal.ims</groupId>
+            <artifactId>shared-telecom-lib</artifactId>
+        </dependency>
+
+        <!-- Actuator Prometheus endpoint is scraped by the ims-pods ServiceMonitor -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
+
+        <!-- Kafka consumer (ims-charging) and producer (dead-letter topic) -->
+        <dependency>
+            <groupId>org.springframework.kafka</groupId>
+            <artifactId>spring-kafka</artifactId>
+            <exclusions>
+                <!-- Same net.jpountz classes as at.yawk.lz4:lz4-java (the maintained fork the
+                     ClickHouse driver brings); keeping both makes the winner classpath-order
+                     dependent. Kafka works with the fork. -->
+                <exclusion>
+                    <groupId>org.lz4</groupId>
+                    <artifactId>lz4-java</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
+        <!-- JdbcTemplate + HikariCP pool for the ClickHouse batch inserts -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-jdbc</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.clickhouse</groupId>
+            <artifactId>clickhouse-jdbc</artifactId>
+        </dependency>
+
+        <!-- ==== test ==== -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>

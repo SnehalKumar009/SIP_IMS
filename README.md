@@ -27,6 +27,7 @@ deploy/
   monitoring/              Homer + Prometheus ServiceMonitors
   kafka/                   Strimzi operator + shared Kafka cluster (ims-logs topic)
   logging/                 Fluent Bit, ECK (Elasticsearch, Kibana, Logstash), Kibana content
+  clickhouse/              ClickHouse StatefulSet + schema (charging records, CDRs)
   manifests/  helm/  terraform/   (per-pod deploy, added per phase)
 tests/sipp/                end-to-end SIPp scenarios
 docs/                      architecture + ADRs
@@ -64,6 +65,7 @@ microk8s kubectl apply -k deploy/monitoring
 - **Phase 3 — I-CSCF** ✅ (home-network entry proxy, HSS Cx client UAR/LIR, S-CSCF selection)
 - **Phase 4 — S-CSCF** ✅ (registrar, SIP Digest auth, Cx MAR/SAR, session control)
 - **Logging** ✅ (ECS JSON logs with `service.name` / `sip.call_id`, Fluent Bit → Kafka → Logstash → Elasticsearch, Kibana dashboard; see [deploy/logging](deploy/logging/README.md))
-- **Phase 5 — RTPEngine** · **Phase 6 — CDF-billing** · **Phase 7 — E2E + stress (SIPp)**
+- **Phase 6 — CDF-billing** ✅ (S-CSCF charging records → Kafka `ims-charging` → `cdf-billing` → ClickHouse CDRs; see [services/cdf-billing](services/cdf-billing/README.md))
+- **Phase 5 — RTPEngine** · **Phase 7 — E2E + stress (SIPp)**
 
 Known shortcuts and deferred work are tracked in [docs/TECH_DEBT.md](docs/TECH_DEBT.md).

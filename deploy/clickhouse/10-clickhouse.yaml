@@ -1,0 +1,124 @@
+# ClickHouse: the CDF's analytic store for charging records and CDRs.
+#
+# Single node as a plain StatefulSet (no operator). The schema in 00-schema.sql is
+# loaded by the image's entrypoint on first start, when the data volume is empty.
+#
+#   HTTP  clickhouse.ims-core.svc.cluster.local:8123   (JDBC driver used by cdf-billing)
+#   native                                       :9000   (clickhouse-client)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: clickhouse-credentials
+  labels:
+    app.kubernetes.io/name: clickhouse
+    app.kubernetes.io/part-of: ims-platform
+type: Opaque
+# Literal dev credential in git, like hss-postgres (docs/TECH_DEBT.md TD-003).
+stringData:
+  username: cdf
+  password: cdf-change-me
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: clickhouse
+  labels:
+    app.kubernetes.io/name: clickhouse
+    app.kubernetes.io/part-of: ims-platform
+spec:
+  selector:
+    app.kubernetes.io/name: clickhouse
+  ports:
+    - name: http
+      port: 8123
+      targetPort: http
+    - name: native
+      port: 9000
+      targetPort: native
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: clickhouse
+  labels:
+    app.kubernetes.io/name: clickhouse
+    app.kubernetes.io/part-of: ims-platform
+    plane: charging
+spec:
+  serviceName: clickhouse
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: clickhouse
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: clickhouse
+        app.kubernetes.io/part-of: ims-platform
+        plane: charging
+    spec:
+      securityContext:
+        # The image runs ClickHouse as uid/gid 101; the volume must be writable by it.
+        fsGroup: 101
+      containers:
+        - name: clickhouse
+          image: clickhouse/clickhouse-server:26.8.25.14
+          imagePullPolicy: IfNotPresent
+          env:
+            # The entrypoint creates this user. DEFAULT_ACCESS_MANAGEMENT lets it run the
+            # init DDL and manage grants (admin; fine for a dev cluster, see TD-036).
+            - name: CLICKHOUSE_USER
+              valueFrom:
+                secretKeyRef:
+                  name: clickhouse-credentials
+                  key: username
+            - name: CLICKHOUSE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: clickhouse-credentials
+                  key: password
+            - name: CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT
+              value: "1"
+          ports:
+            - name: http
+              containerPort: 8123
+            - name: native
+              containerPort: 9000
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /ping
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 250m
+              memory: 1Gi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/clickhouse
+            - name: schema
+              mountPath: /docker-entrypoint-initdb.d
+              readOnly: true
+      volumes:
+        - name: schema
+          configMap:
+            name: clickhouse-schema
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: microk8s-hostpath
+        resources:
+          requests:
+            storage: 5Gi

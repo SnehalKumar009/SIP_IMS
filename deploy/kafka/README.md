@@ -5,7 +5,8 @@ Shared Kafka cluster for the IMS platform, run by the Strimzi operator in the `k
 | Topic | Producer | Consumer | Purpose |
 |-------|----------|----------|---------|
 | `ims-logs` | Fluent Bit | Logstash | JSON pod logs on their way to Elasticsearch (best-effort) |
-| *(Phase 6)* charging | S-CSCF | CDF-billing | Session start/end events (durable, `acks=all`) |
+| `ims-charging` | S-CSCF | cdf-billing | Session start/end records (durable: `acks=all`, idempotent producer, 7-day retention, key = Call-ID) |
+| `ims-charging-dlt` | cdf-billing | (manual) | Charging records the CDF could not parse (30-day retention) |
 
 | Component | Version |
 |-----------|---------|

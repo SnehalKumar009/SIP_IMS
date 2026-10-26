@@ -61,6 +61,35 @@ public class ScscfProperties {
     @Valid
     private final Cx cx = new Cx();
 
+    @Valid
+    private final Charging charging = new Charging();
+
+    /**
+     * Charging plane. In {@code kafka} mode session start/end records go to the
+     * {@link #topic} keyed by Call-ID, so both records of a call share a partition and
+     * arrive at the CDF in order; {@code log} only writes them to the structured log.
+     */
+    public static class Charging {
+        @Pattern(regexp = "kafka|log")
+        private String mode = "log";
+
+        @NotBlank
+        private String topic = "ims-charging";
+
+        /**
+         * Longest a session is tracked without a BYE. When it passes, the session is
+         * closed with an end record whose reason is TIMEOUT, so a lost BYE still bills.
+         */
+        private Duration maxSessionDuration = Duration.ofHours(12);
+
+        public String getMode() { return mode; }
+        public void setMode(String mode) { this.mode = mode; }
+        public String getTopic() { return topic; }
+        public void setTopic(String topic) { this.topic = topic; }
+        public Duration getMaxSessionDuration() { return maxSessionDuration; }
+        public void setMaxSessionDuration(Duration maxSessionDuration) { this.maxSessionDuration = maxSessionDuration; }
+    }
+
     /**
      * Cx boundary tuning. A circuit breaker reacts only after failures accumulate, so it
      * cannot on its own stop slow HSS answers from pinning every Jain SIP listener thread.
@@ -226,4 +255,5 @@ public class ScscfProperties {
     public RateLimit getRateLimit() { return rateLimit; }
     public Routing getRouting() { return routing; }
     public Cx getCx() { return cx; }
+    public Charging getCharging() { return charging; }
 }

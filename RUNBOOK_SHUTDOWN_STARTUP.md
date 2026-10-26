@@ -38,6 +38,8 @@ Ctrl+C any `port-forward` and SIPp runs in your terminals.
 ### 2. Delete the IMS services (reverse dependency order)
 
 ```bash
+microk8s kubectl delete -f deploy/manifests/cdf-billing/cdf-billing.yaml
+microk8s kubectl delete -k deploy/clickhouse
 microk8s kubectl delete -f deploy/manifests/p-cscf/p-cscf.yaml
 microk8s kubectl delete -f deploy/manifests/i-cscf/i-cscf.yaml
 microk8s kubectl delete -f deploy/manifests/s-cscf/s-cscf.yaml
@@ -79,6 +81,17 @@ Some CRDs may stay behind; they take no resources and the install scripts reuse 
 microk8s kubectl delete -k deploy/monitoring
 microk8s kubectl -n monitoring wait --for=delete pod --all --timeout=180s
 ```
+
+### 6b. ClickHouse (charging store)
+
+```bash
+microk8s kubectl apply -k deploy/clickhouse
+microk8s kubectl -n ims-core rollout status statefulset/clickhouse --timeout=300s
+microk8s kubectl -n ims-core exec clickhouse-0 -- clickhouse-client --user cdf --password cdf-change-me \
+  -q "SHOW TABLES FROM ims_billing"                 # cdr, charging_events
+```
+
+The schema loads on first start (empty volume) from `deploy/clickhouse/00-schema.sql`.
 
 ### 7. Delete the volumes that StatefulSets leave behind
 
@@ -152,7 +165,7 @@ free -g                             # RAM back
 
 ## B, Part 2: bring everything back (tomorrow)
 
-Order matters: cluster → registry → namespaces → Homer → Kafka → logging → images → services.
+Order matters: cluster → registry → namespaces → Homer → Kafka → logging → ClickHouse → images → services → CDF.
 
 ### 1. Start MicroK8s
 
@@ -190,7 +203,7 @@ microk8s kubectl -n monitoring get pods -w          # Ctrl+C when all are Runnin
 ./deploy/kafka/install-operator.sh
 microk8s kubectl apply -k deploy/kafka
 microk8s kubectl -n kafka wait kafka/ims-kafka --for=condition=Ready --timeout=600s
-microk8s kubectl -n kafka get kafkatopic ims-logs   # READY True
+microk8s kubectl -n kafka get kafkatopic           # ims-logs, ims-charging, ims-charging-dlt: READY True
 ```
 
 ### 6. Logging (Elasticsearch, Kibana, Logstash, Fluent Bit)
@@ -232,7 +245,7 @@ ls services/*/target/*.jar                           # hss, i-cscf, p-cscf, s-cs
 ### 8. Build and push the images (`:latest`)
 
 ```bash
-for s in hss s-cscf i-cscf p-cscf; do
+for s in hss s-cscf i-cscf p-cscf cdf-billing; do
   docker build -t localhost:32000/ims/$s:latest services/$s && \
   docker push localhost:32000/ims/$s:latest
 done
@@ -257,6 +270,9 @@ microk8s kubectl -n ims-core rollout status deploy/i-cscf --timeout=300s
 
 microk8s kubectl apply -f deploy/manifests/p-cscf/p-cscf.yaml
 microk8s kubectl -n ims-core rollout status deploy/p-cscf --timeout=300s
+
+microk8s kubectl apply -f deploy/manifests/cdf-billing/cdf-billing.yaml
+microk8s kubectl -n ims-core rollout status deploy/cdf-billing --timeout=300s
 
 microk8s kubectl -n ims-core get pods
 ```

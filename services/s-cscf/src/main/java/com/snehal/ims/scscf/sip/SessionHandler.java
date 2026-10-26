@@ -1,5 +1,6 @@
 package com.snehal.ims.scscf.sip;
 
+import com.snehal.ims.scscf.ScscfProperties;
 import com.snehal.ims.scscf.charging.ChargingEvent;
 import com.snehal.ims.scscf.charging.ChargingEventPublisher;
 import com.snehal.ims.scscf.charging.SessionTracker;
@@ -45,6 +46,7 @@ public class SessionHandler {
     private final MediaController media;
     private final SessionTracker sessions;
     private final ChargingEventPublisher charging;
+    private final String serverName;
 
     public SessionHandler(ProxyForwarder proxy,
                           RegistrationStore store,
@@ -52,7 +54,8 @@ public class SessionHandler {
                           IfcEvaluator ifc,
                           MediaController media,
                           SessionTracker sessions,
-                          ChargingEventPublisher charging) {
+                          ChargingEventPublisher charging,
+                          ScscfProperties props) {
         this.proxy = proxy;
         this.store = store;
         this.sessionCases = sessionCases;
@@ -60,6 +63,13 @@ public class SessionHandler {
         this.media = media;
         this.sessions = sessions;
         this.charging = charging;
+        this.serverName = props.resolvedServerName();
+        // A call whose BYE never reaches this S-CSCF is still closed and billed.
+        sessions.onExpiry(session -> {
+            log.warn("Session {} ended without a BYE; closing it for charging", session.callId());
+            media.delete(session.callId());
+            publishEnd(session, ChargingEvent.END_TIMEOUT);
+        });
     }
 
     public ClientTransaction handle(SipProvider provider, Request request, ServerTransaction serverTx,
@@ -168,7 +178,7 @@ public class SessionHandler {
         SessionTracker.Session session = sessions.start(callId,
                 SipMessages.fromAor(response), SipMessages.toAor(response), Instant.now());
         charging.publish(ChargingEvent.start(session.callId(), session.from(), session.to(),
-                session.startedAt()));
+                session.startedAt(), serverName));
         applyMediaAnswer(response, callId);
     }
 
@@ -178,9 +188,12 @@ public class SessionHandler {
         if (session == null) {
             return;
         }
-        Instant now = Instant.now();
-        charging.publish(ChargingEvent.end(session.callId(), session.from(), session.to(), now,
-                now.getEpochSecond() - session.startedAt().getEpochSecond()));
+        publishEnd(session, ChargingEvent.END_BYE);
+    }
+
+    private void publishEnd(SessionTracker.Session session, String reason) {
+        charging.publish(ChargingEvent.end(session.callId(), session.from(), session.to(),
+                session.startedAt(), Instant.now(), reason, serverName));
     }
 
     // --------------------------------------------------------------------- media seam

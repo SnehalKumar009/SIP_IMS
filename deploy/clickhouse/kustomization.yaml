@@ -1,0 +1,13 @@
+# ClickHouse for IMS charging (CDF store).
+# Apply with:  microk8s kubectl apply -k deploy/clickhouse
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: ims-core
+resources:
+  - 10-clickhouse.yaml
+configMapGenerator:
+  # Hash-suffixed: a schema edit rolls the pod, but the entrypoint only runs it on an
+  # empty volume. Apply DDL changes to a running cluster by hand (README.md).
+  - name: clickhouse-schema
+    files:
+      - 00-schema.sql
